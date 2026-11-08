@@ -2,7 +2,7 @@
 
 **Try it: https://lilrino71.github.io/biobuzz-shot-sim/**
 
-A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag a robot anywhere on the field and pick a goBILDA Yellow Jacket motor and flywheel setup. The sim finds the arc that puts POLLEN or NECTAR into your alliance's upward HIVE CELL, then gives exactly one of three answers:
+A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag your shooter mouth anywhere on the field and pick a goBILDA Yellow Jacket motor and flywheel setup. The sim finds the arc that puts POLLEN or NECTAR into your alliance's upward HIVE CELL, then gives exactly one of three answers:
 
 | Verdict | Meaning |
 |---|---|
@@ -14,7 +14,7 @@ A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag a robot anywhere o
 
 ## Features
 
-- **Robot anywhere:** drag or click on a to-scale top view of the field (141 in between walls), or type x / y. Arrow keys nudge the robot.
+- **Shooter mouth anywhere:** drag or click on a to-scale top view of the field (141 in between walls), or type x / y. Coordinates start at a field corner you choose (default: red alliance, audience side), so the whole field runs 0–141 in (0–358 cm). The aim is solved turret-style and the sim tells you which heading to point the mouth.
 - **Every goBILDA 5203 Yellow Jacket motor** (8 mm REX shaft), 6000 rpm down to 30 rpm, with a side-by-side table for the current spot. The table shows the gear-up each motor would need.
 - **Shooter setups:** one wheel + hood, or top + bottom wheels with adjustable backspin. Also adjustable: goBILDA wheel (diameter and mass), wheels per shaft, a goBILDA steel flywheel, gearing, 1 or 2 motors, time between shots and exit efficiency.
 - **PID vs fixed power, and battery voltage:** PID holds speed and recovers at full power after each shot; fixed power drifts with the battery and creeps back. Battery voltage sets the real top speed for both.
@@ -22,7 +22,7 @@ A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag a robot anywhere o
 - **Verdict map:** colors the whole field by verdict for your current settings.
 - **The required arc:** launch angle, exit speed, aim, apex, time to the CELL and the scoring window, plus a side view and a 3-D view drawn to scale.
 - **TIP button:** the upward CELL flips sides after every TIP, just like in a match.
-- **Warnings:** the robot overlapping a HIVE frame leg, or a tall shooter sitting under a HIVE that can swing down onto it.
+- **Warnings:** the mouth sitting on a HIVE frame leg, or a tall shooter sitting under a HIVE that can swing down onto it.
 - Light and dark themes. Physics runs in a Web Worker, with a main-thread fallback.
 
 ![Dark theme](docs/dark.png)
@@ -51,7 +51,7 @@ Use the live page above, or open `dist/preview.html` (or `docs/index.html`) in a
 
 ```bash
 node tools/build.mjs                      # rebuild dist/ from src/ and data/
-npm test                                  # unit tests (geometry, flight, motor model, verdicts, symmetry, units, mouth offsets)
+npm test                                  # unit tests (geometry, flight, motor model, verdicts, symmetry, units, mouth position and field-corner coordinates)
 python tests/crosscheck/oracle.py --selftest
 node tests/crosscheck/compare.mjs         # engine vs. independent Python oracle
 ```

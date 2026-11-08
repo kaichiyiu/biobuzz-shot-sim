@@ -49,45 +49,108 @@ test('unit system state and engine-text localisation', () => {
   assert.equal(U.setSystem('bogus'), 'imperial');
 });
 
-test('mouth: defaults reproduce the old (robot-centre) results exactly', () => {
-  for (const base of [S({}), S({ robot: { x: -40, y: -50 } }), S({ target: 'blue', robot: { x: 12.75, y: 48 } })]) {
-    const old = E.evaluate(base, 'full');
-    E._internal.clearCaches && E._internal.clearCaches();
-    const neu = E.evaluate({ ...base, mouth: { height: base.h0, forward: 0, lateral: 0 } }, 'full');
-    assert.equal(neu.verdict, old.verdict);
-    assert.equal(neu.hitRate, old.hitRate);
-    assert.deepEqual(neu.best && [neu.best.thetaDeg, neu.best.v, neu.best.yawDeg], old.best && [old.best.thetaDeg, old.best.v, old.best.yawDeg]);
-    near(neu.launch.x, base.robot.x, 1e-12, 'launch x'); near(neu.launch.y, base.robot.y, 1e-12, 'launch y');
+// main's engine (before the mouth work) as the reference for "old results"
+import fs from 'node:fs';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { loadData } from './load-data.mjs';
+function mainEngine() {
+  const src = execFileSync('git', ['show', '427b5e9:src/engine.js'], { cwd: ROOT, encoding: 'utf8' });
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bbz-')), 'engine-main.cjs');
+  fs.writeFileSync(f, src);
+  const M = createRequire(import.meta.url)(f); M.init(loadData()); return M;
+}
+const pick = (r) => ({ verdict: r.verdict, hitRate: r.hitRate, best: r.best && [r.best.thetaDeg, r.best.v, r.best.yawDeg], dist: r.distIn, psi0: r.psi0Deg });
+
+test('mouth: a mouth at the old robot-centre spot reproduces the old results exactly', () => {
+  const OLD = mainEngine();
+  for (const base of [S({}), S({ robot: { x: -40, y: -50 } }), S({ target: 'blue', robot: { x: 12.75, y: 48 } }), S({ h0: 26, robot: { x: -12.75, y: -30 } })]) {
+    const old = OLD.evaluate(base, 'full');
+    const { robot, ...rest } = base;
+    const neu = E.evaluate({ ...rest, mouth: { x: robot.x, y: robot.y, height: base.h0 } }, 'full');
+    assert.deepEqual(pick(neu), pick(old));
+    near(neu.launch.x, robot.x, 0, 'launch x'); near(neu.launch.y, robot.y, 0, 'launch y');
+  }
+  // default params (no mouth, no robot) = the old default robot spot (-12.75, -48)
+  const { robot, ...noPos } = S({});
+  assert.deepEqual(pick(E.evaluate(noPos, 'full')), pick(OLD.evaluate(S({}), 'full')));
+  assert.deepEqual(E.evaluate(noPos, 'coarse').mouth, { x: -12.75, y: -48, height: 16 });
+});
+
+const HALF = loadData().field.field.half;
+test('field frame: field size from data', () => { assert.equal(HALF, 70.5); });
+
+test('field frame: corners map correctly for every origin', () => {
+  const W = 2 * HALF;
+  const eng = { 'red-audience': [-HALF, -HALF], 'blue-audience': [HALF, -HALF], 'red-far': [-HALF, HALF], 'blue-far': [HALF, HALF] };
+  for (const c of Object.keys(U.CORNERS)) {
+    const o = U.fieldToUser(...eng[c], c);
+    near(o.x, 0, 1e-12, `${c} origin x`); near(o.y, 0, 1e-12, `${c} origin y`);
+    const opp = U.fieldToUser(-eng[c][0], -eng[c][1], c);
+    near(opp.x, W, 1e-12, `${c} opposite x`); near(opp.y, W, 1e-12, `${c} opposite y`);
+    const m = U.fieldToDisplay(-eng[c][0], -eng[c][1], c, 'metric');
+    near(m.x, 358.14, 1e-9, 'opposite corner cm'); near(m.y, 358.14, 1e-9, 'opposite corner cm');
+    const ctr = U.fieldToUser(0, 0, c); near(ctr.x, HALF, 1e-12, 'centre'); near(ctr.y, HALF, 1e-12, 'centre');
+    // x always runs along the audience / far wall (engine x), y along the alliance wall (engine y)
+    const px = U.fieldToUser(eng[c][0] + -Math.sign(eng[c][0]) * 10, eng[c][1], c);
+    near(px.x, 10, 1e-12, `${c} x axis`); near(px.y, 0, 1e-12, `${c} x axis`);
+  }
+  assert.equal(U.DEFAULT_CORNER, 'red-audience');
+  const d = U.fieldToUser(-12.75, -48, 'red-audience');
+  near(d.x, 57.75, 1e-12, 'default mouth x'); near(d.y, 22.5, 1e-12, 'default mouth y');
+  assert.equal(U.normCorner('bogus'), 'red-audience');
+});
+
+test('field frame: round trips for all 4 origins in both unit systems', () => {
+  for (const c of Object.keys(U.CORNERS)) for (const u of ['imperial', 'metric']) {
+    for (let k = 0; k < 100; k++) {
+      const X = -HALF + (k * 7.31) % (2 * HALF), Y = HALF - (k * 3.77) % (2 * HALF);
+      const q = U.fieldToDisplay(X, Y, c, u);
+      assert.ok(q.x >= -1e-9 && q.y >= -1e-9, 'inside the field is non-negative');
+      const w = U.displayToField(q.x, q.y, c, u);
+      near(w.x, X, 1e-9, `${c} ${u} x`); near(w.y, Y, 1e-9, `${c} ${u} y`);
+      const h = (k * 37.3) % 360;
+      const back = U.headingToField(U.headingToUser(h, c), c);
+      near(Math.abs(((back - h) % 360 + 540) % 360 - 180), 0, 1e-9, `${c} heading`);
+    }
   }
 });
 
-test('mouth: zero offsets with an explicit heading still equal the old results', () => {
-  const base = S({});
-  const a = E.evaluate(base, 'full');
-  const b = E.evaluate({ ...base, robot: { ...base.robot, heading: 37 } }, 'full');
-  assert.equal(b.hitRate, a.hitRate); assert.equal(b.best.v, a.best.v);
+test('heading output: known geometry', () => {
+  // red-audience origin: axes parallel to the engine's, so headings are unchanged
+  near(U.headingToUser(90, 'red-audience'), 90, 1e-12, 'ra');
+  near(U.headingToUser(90, 'blue-far'), 270, 1e-12, 'bf');      // both axes flipped
+  near(U.headingToUser(0, 'blue-audience'), 180, 1e-12, 'ba');  // x flipped
+  near(U.headingToUser(45, 'red-far'), 315, 1e-12, 'rf');       // y flipped
+  // mouth straight in front of the red HIVE on the audience side: the mouth points +y (toward the HIVE)
+  const r = E.evaluate(S({ robot: undefined, mouth: { x: -12.75, y: -48, height: 16 } }), 'full');
+  assert.ok(r.best);
+  near(r.psi0Deg, 90, 1e-9, 'line to the CELL');
+  near(r.aimHeadingDeg, r.best.yawDeg, 0, 'aim = best yaw');
+  near(U.headingToUser(r.aimHeadingDeg, 'red-audience'), 90, 1.5, 'user heading ~90');
+  near(U.headingToUser(r.aimHeadingDeg, 'blue-far'), 270, 1.5, 'user heading ~270');
+  // oblique: from (-50,-50) toward the red CELL mouth centroid
+  const cen = E._internal.mouthCentroid('red', -1);
+  const o = E.evaluate(S({ robot: undefined, mouth: { x: -50, y: -50 } }), 'coarse');
+  near(o.psi0Deg, Math.atan2(cen[1] + 50, cen[0] + 50) * 180 / Math.PI, 1e-9, 'oblique psi0');
 });
 
-test('mouth: offsets move the launch point by robot pose', () => {
-  const I = E._internal, hs = { red: -1, blue: 1 };
-  let p = I.launchPoint({ x: 0, y: -48, heading: 90 }, 5, 2, 'red', hs);   // facing +y: forward = +y, left = -x
-  near(p.x, -2, 1e-9, 'x'); near(p.y, -43, 1e-9, 'y');
-  p = I.launchPoint({ x: 10, y: 10, heading: 0 }, 5, 2, 'red', hs);
-  near(p.x, 15, 1e-9, 'x'); near(p.y, 12, 1e-9, 'y');
-  // auto heading faces the CELL: a forward offset brings the mouth closer to the target
-  const r0 = E.evaluate(S({}), 'coarse'), r1 = E.evaluate(S({ mouth: { forward: 6 } }), 'coarse');
-  near(r0.distIn - r1.distIn, 6, 1e-6, 'forward 6 in toward the CELL');
-  const r2 = E.evaluate(S({ mouth: { forward: 99, lateral: -99 } }), 'coarse');
-  assert.equal(r2.mouth.forward, 12); assert.equal(r2.mouth.lateral, -12);
+test('mouth: clamped to the field interior by a ball radius', () => {
+  const r = E.evaluate(S({ robot: undefined, mouth: { x: 99, y: -99 } }), 'coarse');
+  const L = HALF - E.ballProps('pollen').rIn;
+  near(r.mouth.x, L, 1e-12, 'x'); near(r.mouth.y, -L, 1e-12, 'y');
+  assert.ok(r.warnings.some((w) => w.code === 'CLAMPED'));
+  const n = E.evaluate(S({ ballId: 'nectar', robot: undefined, mouth: { x: 99, y: 0 } }), 'coarse');
+  near(n.mouth.x, HALF - E.ballProps('nectar').rIn, 1e-12, 'nectar limit');
+  // scan grid stays inside the mouth limit
+  for (const q of E.scanPoints(6)) assert.ok(Math.abs(q.x) <= L && Math.abs(q.y) <= L);
 });
 
 test('mouth: raising the mouth height lowers the required exit speed', () => {
-  // flat shot from the audience side: a higher mouth needs less speed to reach the CELL
   const lo = E.evaluate(S({ mouth: { height: 8 } }), 'full');
   const hi = E.evaluate(S({ mouth: { height: 26 } }), 'full');
   assert.ok(lo.best && hi.best, 'both have arcs');
   assert.ok(hi.best.v < lo.best.v, `v(26 in) ${hi.best.v} < v(8 in) ${lo.best.v}`);
   assert.equal(hi.h0, 26);
-  // mouth.height wins over legacy h0
   assert.equal(E.evaluate(S({ h0: 10, mouth: { height: 20 } }), 'coarse').h0, 20);
 });

@@ -64,7 +64,39 @@
       });
   }
 
+  // ---------------------------------------------------------------- user field frame
+  // The engine frame has its origin at the field centre (+x toward the BLUE wall, +y away from the
+  // audience). Users pick one of the four inside wall corners as (0, 0); their x axis runs along the
+  // audience / far wall and y along the alliance wall, both into the field, so every point is >= 0.
+  // fx / fy: which engine-frame side that corner sits on. Headings: degrees from user +x toward user +y.
+  var CORNERS = {
+    'red-audience': { fx: -1, fy: -1, label: 'Red alliance · audience side' },
+    'blue-audience': { fx: 1, fy: -1, label: 'Blue alliance · audience side' },
+    'red-far': { fx: -1, fy: 1, label: 'Red alliance · far side' },
+    'blue-far': { fx: 1, fy: 1, label: 'Blue alliance · far side' }
+  };
+  var DEFAULT_CORNER = 'red-audience';
+  var corner = DEFAULT_CORNER, fieldHalf = 70.5;
+  function normCorner(c) { return CORNERS[c] ? c : DEFAULT_CORNER; }
+  function setCorner(c) { corner = normCorner(c); return corner; }
+  function getCorner() { return corner; }
+  function setFieldHalf(h) { if (h > 0) fieldHalf = h; return fieldHalf; }
+  function cr(c) { return CORNERS[normCorner(c || corner)]; }
+  // engine (in, centre origin) <-> user frame in inches
+  function fieldToUser(X, Y, c, half) { var k = cr(c), H = half || fieldHalf; return { x: H - k.fx * X, y: H - k.fy * Y }; }
+  function userToField(x, y, c, half) { var k = cr(c), H = half || fieldHalf; return { x: -k.fx * (x - H), y: -k.fy * (y - H) }; }
+  // the same in display units (cm when metric)
+  function fieldToDisplay(X, Y, c, u) { var q = fieldToUser(X, Y, c); return { x: toLen(q.x, u), y: toLen(q.y, u) }; }
+  function displayToField(x, y, c, u) { return userToField(fromLen(x, u), fromLen(y, u), c); }
+  function wrap360(d) { d = d % 360; if (d < 0) d += 360; return d >= 360 - 1e-9 ? 0 : d; }
+  // headings (deg): engine CCW-from-+x <-> user frame (0 = user +x, positive toward user +y), 0..360
+  function headingToUser(deg, c) { var k = cr(c), a = deg * Math.PI / 180; return wrap360(Math.atan2(-k.fy * Math.sin(a), -k.fx * Math.cos(a)) * 180 / Math.PI); }
+  function headingToField(deg, c) { return headingToUser(deg, c); }   // the map is its own inverse
+
   return {
+    CORNERS: CORNERS, DEFAULT_CORNER: DEFAULT_CORNER, normCorner: normCorner, setCorner: setCorner, getCorner: getCorner,
+    setFieldHalf: setFieldHalf, fieldToUser: fieldToUser, userToField: userToField,
+    fieldToDisplay: fieldToDisplay, displayToField: displayToField, headingToUser: headingToUser, headingToField: headingToField,
     SYSTEMS: SYSTEMS, setSystem: setSystem, getSystem: getSystem, normalize: normalize,
     lenUnit: function (u) { return sys(u).len; }, speedUnit: function (u) { return sys(u).speed; }, massUnit: function (u) { return sys(u).mass; },
     lenStep: function (u) { return sys(u).lenStep; },

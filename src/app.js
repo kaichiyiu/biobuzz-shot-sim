@@ -26,6 +26,16 @@
   }
   function saveUnits(u) { try { window.localStorage.setItem(UNITS_KEY, u); } catch (e) { /* storage off */ } }
   U.setSystem(loadUnits());
+  // origin corner of the user's field frame (persisted like units; ?origin=red-audience etc.)
+  var ORIGIN_KEY = 'biobuzz-shot-sim.origin';
+  function loadOrigin() {
+    var m = /[?&]origin=([a-z-]+)/.exec(location.search);
+    if (m && U.CORNERS[m[1]]) return m[1];
+    try { return U.normCorner(window.localStorage.getItem(ORIGIN_KEY)); } catch (e) { return U.DEFAULT_CORNER; }
+  }
+  function saveOrigin(c) { try { window.localStorage.setItem(ORIGIN_KEY, c); } catch (e) { /* storage off */ } }
+  U.setFieldHalf(F.field.half);
+  U.setCorner(loadOrigin());
   function fmtLen(inches, d) { return U.fmtLen(inches, d); }
   function fmtSpeed(ms, d) { return U.fmtSpeed(ms, d); }
   function fmtMass(kg, d) { return U.fmtMass(kg, d); }
@@ -37,16 +47,16 @@
   var def = SH.defaults || {};
   var wheelById = {};
   SH.wheels.forEach(function (w) { wheelById[w.id] = w; });
-  var LIMIT = F.field.half - 9;
-  var MOUTH_MAX = 12;   // matches the engine's mouth offset clamp (in)
+  // the shooter mouth stays one ball radius inside the walls (matches the engine clamp)
+  function mouthLimit() { return F.field.half - E.ballProps(state.ballId).rIn; }
   var state = {
     ballId: 'pollen',
     target: 'red',
     hive: { red: F.hive.upSideStart.red, blue: F.hive.upSideStart.blue },
-    robot: { x: F.hive.hiveX.red, y: -48, heading: null },
+    mouth: { x: F.hive.hiveX.red, y: -48 },   // engine frame (in, field centre origin)
     h0: def.h0 || 16,
-    mouth: { forward: 0, lateral: 0 },
     units: U.getSystem(),
+    origin: U.getCorner(),
     precision: def.precision || 'typical',
     motorId: (D.motors.motors.find(function (m) { return m.freeRpm === 6000; }) || D.motors.motors[0]).id,
     shooter: {
@@ -79,13 +89,12 @@
     return { total: total, wheelI: w.inertiaKgM2, n: n, addOn: add, hub: HUB_I, text: text };
   }
 
-  function params(robot) {
+  function params(at) {
     var pr = SH.precision[state.precision], s = state.shooter;
     var inert = flywheelInertia(s);
     return {
       ballId: state.ballId, target: state.target, hiveState: { red: state.hive.red, blue: state.hive.blue },
-      robot: robot || { x: state.robot.x, y: state.robot.y, heading: state.robot.heading }, h0: state.h0,
-      mouth: { height: state.h0, forward: state.mouth.forward, lateral: state.mouth.lateral },
+      mouth: { x: at ? at.x : state.mouth.x, y: at ? at.y : state.mouth.y, height: state.h0 },
       precision: { sigThetaDeg: pr.sigThetaDeg, sigYawDeg: pr.sigYawDeg, sigShooter: pr.sigShooter },
       motorId: state.motorId,
       shooter: {
@@ -131,7 +140,7 @@
           var t = performance.now();
           while (i < pts.length && performance.now() - t < 12) {
             var q = pts[i++];
-            var r = E.evaluate(Object.assign({}, p, { robot: Object.assign({}, p.robot, q) }), 'coarse');
+            var r = E.evaluate(Object.assign({}, p, { mouth: Object.assign({}, p.mouth, { x: q.x, y: q.y }) }), 'coarse');
             onCell(q.x, q.y, r.verdict, i, pts.length);
           }
           if (i < pts.length) setTimeout(chunk, 0); else onDone();
@@ -309,6 +318,7 @@
       { label: 'Launch angle', value: nf(b.thetaDeg, 1) + '°', small: nf(90 - b.thetaDeg, 1) + '° off vertical' },
       { label: 'Exit speed' + note, value: fmtSpeed(b.v), small: U.getSystem() === 'metric' ? U.fmtSpeed(b.v, 1, 'imperial') : U.fmtSpeed(b.v, 2, 'metric') },
       { label: 'Aim', value: nf(b.yawOffsetDeg, 1) + '°', small: aimWords(b.yawOffsetDeg) },
+      { label: 'Point the mouth', value: nf(U.headingToUser(b.yawDeg), 1) + '°', small: 'heading from your +x axis toward +y' },
       { label: 'Apex', value: fmtLen(b.apexIn, 0), small: (U.getSystem() === 'metric' ? nf(b.apexIn * 0.0254, 2) + ' m' : nf(b.apexIn / 12, 1) + ' ft') + ' above the tiles' },
       { label: 'Time to CELL', value: b.tToCell != null ? nf(b.tToCell, 2) + ' s' : '—', small: b.entrySpeed != null ? 'enters at ' + fmtSpeed(b.entrySpeed, 1) : '' },
       { label: 'Distance', value: fmtLen(r.distIn, 0), small: 'shooter mouth to CELL mouth center, flat' },
@@ -564,8 +574,7 @@
 
     // ground track + aim
     var r = current, aimHeading = r ? (r.best ? r.best.yawDeg : r.psi0Deg) : 90;
-    var heading = state.robot.heading != null ? state.robot.heading : (r && r.robotHeadingDeg != null ? r.robotHeadingDeg : aimHeading);
-    var lp = r && r.launch ? r.launch : { x: state.robot.x, y: state.robot.y };
+    var lp = { x: state.mouth.x, y: state.mouth.y };
     if (r && r.trajectory && r.best && r.best.reachable !== false) {
       c.strokeStyle = P.pollen;
       c.lineWidth = 3;
@@ -583,51 +592,61 @@
     c.fillStyle = P.ink;
     c.fill();
 
-    // robot
-    var rx = sx(state.robot.x), ry = sy(state.robot.y), hs = 9 * K;
-    c.save();
-    c.translate(rx, ry);
-    c.rotate(-heading * DEG);
-    c.fillStyle = P.robot;
+    // origin corner + axes of the user frame
+    var oc = U.CORNERS[state.origin], ox = oc.fx * half, oy = oc.fy * half, al = 14;
     c.strokeStyle = P.ink;
+    c.fillStyle = P.ink;
+    c.lineWidth = 2;
+    line(c, [sx(ox), sy(oy)], [sx(ox + oc.fx * -al), sy(oy)]);
+    line(c, [sx(ox), sy(oy)], [sx(ox), sy(oy + oc.fy * -al)]);
+    c.beginPath();
+    c.arc(sx(ox), sy(oy), Math.max(3, 1.1 * K), 0, 2 * Math.PI);
+    c.fill();
+    c.font = '700 ' + Math.max(10, Math.round(3.2 * K)) + 'px "Barlow Semi Condensed", sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('x', sx(ox - oc.fx * (al + 3)), sy(oy - oc.fy * 3));
+    c.fillText('y', sx(ox - oc.fx * 3), sy(oy - oc.fy * (al + 3)));
+    c.fillText('(0,0)', sx(ox - oc.fx * 7), sy(oy - oc.fy * 7));
+
+    // shooter mouth marker + heading tick
+    var mx = sx(lp.x), my = sy(lp.y), mr = Math.max(5, 2.2 * K);
+    c.strokeStyle = P.ink;
+    c.lineWidth = 2.5;
+    line(c, [mx, my], [mx + Math.cos(aimHeading * DEG) * mr * 2.6, my - Math.sin(aimHeading * DEG) * mr * 2.6]);
+    c.fillStyle = P.pollen;
     c.lineWidth = 2;
     c.beginPath();
-    if (c.roundRect) c.roundRect(-hs, -hs, 2 * hs, 2 * hs, 2 * K); else c.rect(-hs, -hs, 2 * hs, 2 * hs);
+    c.arc(mx, my, mr, 0, 2 * Math.PI);
     c.fill();
     c.stroke();
-    c.strokeStyle = P.pollen;
-    c.lineWidth = Math.max(3, 1.4 * K);
-    line(c, [hs - 1.2 * K, -hs * 0.72], [hs - 1.2 * K, hs * 0.72]);
     c.fillStyle = P.ink;
     c.beginPath();
-    c.arc(0, 0, Math.max(3, 1.3 * K), 0, 2 * Math.PI);
+    c.arc(mx, my, Math.max(1.5, 0.5 * K), 0, 2 * Math.PI);
     c.fill();
-    c.restore();
-    if (state.mouth.forward || state.mouth.lateral) {   // shooter mouth marker
-      c.fillStyle = P.pollen;
-      c.strokeStyle = P.ink;
-      c.lineWidth = 1.5;
-      c.beginPath();
-      c.arc(sx(lp.x), sy(lp.y), Math.max(3, 1.1 * K), 0, 2 * Math.PI);
-      c.fill();
-      c.stroke();
-    }
     if (document.activeElement === fieldCanvas) {
       c.strokeStyle = P.pollen;
       c.lineWidth = 1.5;
       c.beginPath();
-      c.arc(rx, ry, hs * 1.6, 0, 2 * Math.PI);
+      c.arc(mx, my, mr * 2.2, 0, 2 * Math.PI);
       c.stroke();
     }
   }
 
   // pointer + keyboard
   var dragging = false, dragFrame = 0;
-  function moveRobotTo(x, y, mode) {
-    state.robot.x = Math.round(clamp(x, -LIMIT, LIMIT) * 2) / 2;
-    state.robot.y = Math.round(clamp(y, -LIMIT, LIMIT) * 2) / 2;
-    $('rx').value = lenVal(state.robot.x);
-    $('ry').value = lenVal(state.robot.y);
+  // x, y in the engine frame (in). Snap to the display step in the user frame, then clamp.
+  function moveMouthTo(x, y, mode, exact) {
+    var L = mouthLimit();
+    x = clamp(x, -L, L); y = clamp(y, -L, L);
+    if (!exact) {
+      var st = U.lenStep(), q = U.fieldToDisplay(x, y);
+      var w = U.displayToField(Math.round(q.x / st) * st, Math.round(q.y / st) * st);
+      x = clamp(w.x, -L, L); y = clamp(w.y, -L, L);
+    }
+    state.mouth.x = x;
+    state.mouth.y = y;
+    syncMouthInputs();
     drawField();
     if (mode === 'coarse') {
       if (!dragFrame) dragFrame = requestAnimationFrame(function () { dragFrame = 0; request('coarse'); });
@@ -647,13 +666,13 @@
     fieldCanvas.classList.add('dragging');
     fieldCanvas.focus({ preventScroll: true });
     var w = eventWorld(e);
-    moveRobotTo(w.x, w.y, 'coarse');
+    moveMouthTo(w.x, w.y, 'coarse');
     e.preventDefault();
   });
   fieldCanvas.addEventListener('pointermove', function (e) {
     if (!dragging) return;
     var w = eventWorld(e);
-    moveRobotTo(w.x, w.y, 'coarse');
+    moveMouthTo(w.x, w.y, 'coarse');
   });
   function endDrag(e) {
     if (!dragging) return;
@@ -670,13 +689,14 @@
     else if (e.key === 'ArrowUp') dy = d; else if (e.key === 'ArrowDown') dy = -d;
     else return;
     e.preventDefault();
-    moveRobotTo(state.robot.x + dx, state.robot.y + dy, 'key');
+    var step = U.fromLen(d * U.lenStep() * (U.getSystem() === 'metric' ? 1 : 2));   // 1 in / 1 cm (Shift: 6)
+    moveMouthTo(state.mouth.x + Math.sign(dx) * step, state.mouth.y + Math.sign(dy) * step, 'key');
   });
   fieldCanvas.addEventListener('focus', drawField);
   fieldCanvas.addEventListener('blur', drawField);
 
   // heat map
-  function heatParamsKey(p) { var q = Object.assign({}, p, { robotHeading: p.robot.heading }); delete q.robot; return JSON.stringify(q); }
+  function heatParamsKey(p) { var q = Object.assign({}, p, { mouth: { height: p.mouth.height } }); return JSON.stringify(q); }
   function startScan() {
     if (!backend) return;
     var p = params(), key = heatParamsKey(p);
@@ -774,15 +794,11 @@
       c.stroke();
     }
 
-    // robot + mast
-    // s = 0 is the shooter mouth; the robot body is centred on the robot centre projected on the shot line
-    var h0 = p.h0, sc = (p.robot.x - sv.origin[0]) * sv.uAxis[0] + (p.robot.y - sv.origin[1]) * sv.uAxis[1];
-    c.fillStyle = P.robot;
+    // shooter mouth: s = 0, a post from the tiles up to the mouth height (robot body not modelled)
+    var h0 = p.h0;
     c.strokeStyle = P['ink-2'];
-    c.lineWidth = 1.5;
-    c.fillRect(X(sc - 9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
-    c.strokeRect(X(sc - 9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
-    if (h0 > 12) { c.lineWidth = 3; line(c, [X(0), Y(12)], [X(0), Y(h0)]); }
+    c.lineWidth = 3;
+    line(c, [X(0), Y(0)], [X(0), Y(h0)]);
     c.fillStyle = P.ink;
     c.beginPath();
     c.arc(X(0), Y(h0), 3.5, 0, 2 * Math.PI);
@@ -934,22 +950,15 @@
       var r = current, p = currentParams;
       if (!r || !p) return;
       var aimHd = r.best ? r.best.yawDeg : r.psi0Deg;
-      var heading = r.robotHeadingDeg != null ? r.robotHeadingDeg : aimHd;
       if (!userOrbited) {
         orbit.az = Math.atan2(Math.sin(aimHd * DEG), -Math.cos(aimHd * DEG)) + 0.55;
-        orbit.target.set((p.robot.x + F.hive.hiveX[p.target]) / 2, 22, -p.robot.y / 2);
+        orbit.target.set((p.mouth.x + F.hive.hiveX[p.target]) / 2, 22, -p.mouth.y / 2);
       }
-      var bodyH = Math.min(p.h0, 12);
-      var robot = new T.Mesh(new T.BoxGeometry(18, bodyH, 18), new T.MeshStandardMaterial({ color: col('pollen'), roughness: 0.8 }));
-      robot.position.set(p.robot.x, bodyH / 2, -p.robot.y);
-      robot.rotation.y = heading * DEG;
-      dynGroup.add(robot);
-      var edges = new T.LineSegments(new T.EdgesGeometry(robot.geometry), new T.LineBasicMaterial({ color: col('ink') }));
-      edges.position.copy(robot.position);
-      edges.rotation.copy(robot.rotation);
-      dynGroup.add(edges);
-      var lp3 = r.launch || { x: p.robot.x, y: p.robot.y };
-      if (p.h0 > bodyH) rod([lp3.x, lp3.y, bodyH], [lp3.x, lp3.y, p.h0], 0.8, col('ink-2'), dynGroup);
+      // shooter mouth: a post from the tiles to the mouth height and a small disc at the mouth
+      rod([p.mouth.x, p.mouth.y, 0], [p.mouth.x, p.mouth.y, p.h0], 0.8, col('ink-2'), dynGroup);
+      var disc = new T.Mesh(new T.CylinderGeometry(2.2, 2.2, 0.6, 24), new T.MeshStandardMaterial({ color: col('pollen'), roughness: 0.8 }));
+      disc.position.set(p.mouth.x, p.h0, -p.mouth.y);
+      dynGroup.add(disc);
       var path = r.trajectory || (r.closestMiss && r.closestMiss.path);
       var ok = !!r.trajectory && r.best && r.best.reachable !== false;
       if (path) {
@@ -1048,12 +1057,9 @@
     $('h0Out').textContent = fmtLen(state.h0, 0);
     document.querySelectorAll('.u-len').forEach(function (el) { el.textContent = U.lenUnit(); });
     var step = U.lenStep();
-    ['rx', 'ry', 'mouthFwd', 'mouthLat'].forEach(function (id) { $(id).step = step; });
-    $('mouthFwd').value = lenVal(state.mouth.forward);
-    $('mouthLat').value = lenVal(state.mouth.lateral);
-    $('mouthFwd').min = $('mouthLat').min = lenVal(-MOUTH_MAX);
-    $('mouthFwd').max = $('mouthLat').max = lenVal(MOUTH_MAX);
-    $('rh').value = state.robot.heading == null ? '' : state.robot.heading;
+    ['mx', 'my'].forEach(function (id) { $(id).step = step; });
+    $('origin').value = state.origin;
+    syncMouthInputs();
     $('pollenSize').textContent = fmtLen(E.ballProps('pollen').Din, 1);
     $('nectarSize').textContent = fmtLen(E.ballProps('nectar').Din, 1);
     $('nudgeText').textContent = fmtLen(1, U.getSystem() === 'metric' ? 1 : 0) + ' (Shift: ' + fmtLen(6, 0) + ')';
@@ -1082,11 +1088,19 @@
       'A hooded shooter ideally launches at half the wheel\'s surface speed. Measured shooters land around 0.30–0.45, so lower this if your real shots come out slow.';
     var pr = SH.precision[state.precision];
     $('precHelp').textContent = 'Each shot is off by about ±' + pr.sigThetaDeg + '° in angle, ±' + pr.sigYawDeg + '° in aim and ±' + nf(pr.sigShooter * 100, 1) + '% in speed.';
-    $('rx').value = lenVal(state.robot.x);
-    $('ry').value = lenVal(state.robot.y);
-    $('rx').min = $('ry').min = lenVal(-LIMIT);
-    $('rx').max = $('ry').max = lenVal(LIMIT);
     $('tipLabel').textContent = 'TIP ' + state.target + ' HIVE';
+  }
+
+  function syncMouthInputs() {
+    var q = U.fieldToDisplay(state.mouth.x, state.mouth.y), L = mouthLimit(), H = F.field.half;
+    $('mx').value = Math.round(q.x * 100) / 100;
+    $('my').value = Math.round(q.y * 100) / 100;
+    $('mx').min = $('my').min = lenVal(H - L);
+    $('mx').max = $('my').max = lenVal(H + L);
+    $('originHelp').textContent = '(0, 0) is the ' + U.CORNERS[state.origin].label.toLowerCase() + ' inside wall corner; x runs along the ' +
+      (U.CORNERS[state.origin].fy < 0 ? 'audience' : 'far') + ' wall, y along the ' + (U.CORNERS[state.origin].fx < 0 ? 'red' : 'blue') +
+      ' alliance wall. The far corner is (' + nf(U.toLen(2 * H), 1) + ', ' + nf(U.toLen(2 * H), 1) + ') ' + U.lenUnit() +
+      '. Headings: degrees from +x toward +y.';
   }
 
   function changed(opts) {
@@ -1102,7 +1116,11 @@
       var b = e.target.closest('button');
       if (!b) return;
       var key = seg.getAttribute('data-key'), v = b.getAttribute('data-v');
-      if (key === 'ballId') state.ballId = v;
+      if (key === 'ballId') {
+        state.ballId = v;
+        var Lb = mouthLimit();
+        state.mouth.x = clamp(state.mouth.x, -Lb, Lb); state.mouth.y = clamp(state.mouth.y, -Lb, Lb);
+      }
       else if (key === 'target') { state.target = v; return changed({ hive: true }); }
       else if (key === 'upSide') { state.hive[state.target] = Number(v); return changed({ hive: true }); }
       else if (key === 'motorsPerWheel') state.shooter.motorsPerWheel = Number(v);
@@ -1137,26 +1155,22 @@
     if (lastMotorRows) renderMotors(lastMotorRows);
     if (mathDialog.open) renderMath();
   }
-  ['mouthFwd', 'mouthLat'].forEach(function (id) {
+  ['mx', 'my'].forEach(function (id) {
     $(id).addEventListener('change', function () {
-      var v = parseLen(this.value);
-      if (!isFinite(v)) return syncControls();
-      state.mouth[id === 'mouthFwd' ? 'forward' : 'lateral'] = clamp(v, -MOUTH_MAX, MOUTH_MAX);
-      changed();
-    });
-  });
-  $('rh').addEventListener('change', function () {
-    var t = String(this.value).trim();
-    if (t === '') state.robot.heading = null;
-    else { var hd = Number(t); if (!isFinite(hd)) return syncControls(); state.robot.heading = ((hd % 360) + 540) % 360 - 180; }
-    changed();
-  });
-  ['rx', 'ry'].forEach(function (id) {
-    $(id).addEventListener('change', function () {
-      var x = parseLen($('rx').value), y = parseLen($('ry').value);
+      var x = U.parseLen($('mx').value), y = U.parseLen($('my').value);   // -> inches in the user frame
       if (!isFinite(x) || !isFinite(y)) return syncControls();
-      moveRobotTo(x, y, 'key');
+      x = U.toLen(x); y = U.toLen(y);
+      var w = U.displayToField(x, y);
+      moveMouthTo(w.x, w.y, 'key', true);
     });
+  });
+  $('origin').addEventListener('change', function () {
+    state.origin = U.setCorner(this.value);
+    saveOrigin(state.origin);
+    syncControls();
+    if (current) renderArc(current, currentParams);
+    drawField();
+    if (mathDialog.open) renderMath();
   });
 
   // ------------------------------------------------------------------ show the math
@@ -1170,11 +1184,12 @@
     var wheel = wheelById[s.wheelId], fi = flywheelInertia(s);
     var f = function (x, d) { return nf(x, d == null ? 2 : d); };
     var pid = sh.control === 'pid';
-    var lpm = r.launch || { x: p.robot.x, y: p.robot.y }, Lu = U.lenUnit();
-    var moved = Math.abs(lpm.x - p.robot.x) > 1e-9 || Math.abs(lpm.y - p.robot.y) > 1e-9;
-    $('mathSub').textContent = bp.label + ' from (' + f(U.toLen(p.robot.x), 1) + ', ' + f(U.toLen(p.robot.y), 1) + ') ' + Lu +
-      (moved ? ' (shooter mouth at (' + f(U.toLen(lpm.x), 1) + ', ' + f(U.toLen(lpm.y), 1) + ') ' + Lu + ', robot facing ' + f(r.robotHeadingDeg, 0) + '°)' : '') +
-      ', leaving the shooter ' + fmtLen(p.h0, 0) + ' up, into the ' +
+    var mq = U.fieldToDisplay(p.mouth.x, p.mouth.y), Lu = U.lenUnit();
+    var aimH = r.aimHeadingDeg != null ? U.headingToUser(r.aimHeadingDeg) : null;
+    $('mathSub').textContent = bp.label + ' from the shooter mouth at (' + f(mq.x, 1) + ', ' + f(mq.y, 1) + ') ' + Lu +
+      ' (origin: ' + U.CORNERS[state.origin].label.toLowerCase() + ' corner)' +
+      (aimH != null ? ', mouth pointed ' + f(aimH, 1) + '° from +x' : '') +
+      ', ' + fmtLen(p.h0, 0) + ' above the tiles, into the ' +
       p.target + ' HIVE · ' + mo.label + ' · ' + wheel.label + ' · ' + (pid ? 'PID velocity' : 'fixed power') + ' at ' + f(sh.batteryV, 1) + ' V. Every number below is for this spot.';
 
     function sec(title, intro) {

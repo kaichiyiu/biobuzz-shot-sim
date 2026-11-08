@@ -8,7 +8,7 @@
       </svg>
       <div>
         <h1>BIOBUZZ Shot Sim</h1>
-        <p class="sub">FTC 2026–27 · drag the robot, pick a goBILDA motor, see if the HIVE shot works</p>
+        <p class="sub">FTC 2026–27 · drag the shooter mouth, pick a goBILDA motor, see if the HIVE shot works</p>
       </div>
     </div>
     <div class="topbar-right">
@@ -36,14 +36,14 @@
         </div>
       </div>
       <div class="field-wrap" id="fieldWrap">
-        <canvas id="field" tabindex="0" aria-describedby="fieldHint" aria-label="Field. The robot can be dragged anywhere; arrow keys move it."></canvas>
+        <canvas id="field" tabindex="0" aria-describedby="fieldHint" aria-label="Field. The shooter mouth can be dragged anywhere; arrow keys move it."></canvas>
       </div>
       <div class="field-foot">
         <div class="legend" id="fieldLegend">
           <span><i class="key-line"></i>Ball path (ground track)</span>
           <span id="heatLegend" hidden><i class="swatch" style="background:var(--good-mark)"></i>POSSIBLE <i class="swatch" style="background:var(--warn-mark)"></i>NOT CONSISTENT <i class="swatch" style="background:var(--bad-mark)"></i>WON'T WORK</span>
         </div>
-        <p class="hint" id="fieldHint">Drag or click to move the robot · arrow keys nudge <span id="nudgeText">1 in (Shift: 6 in)</span></p>
+        <p class="hint" id="fieldHint">Drag or click to place the shooter mouth · arrow keys nudge <span id="nudgeText">1 in (Shift: 6 in)</span></p>
       </div>
     </section>
 
@@ -101,10 +101,18 @@
           <label class="ctl"><span class="label">Shooter mouth height above tiles <output id="h0Out"></output></span>
             <input type="range" id="h0" min="4" max="29" step="1"></label>
           <div class="ctl-row">
-            <label class="ctl"><span class="label">Mouth forward of center (<span class="u-len">in</span>)</span><input type="number" id="mouthFwd" step="0.5"></label>
-            <label class="ctl"><span class="label">Mouth left of center (<span class="u-len">in</span>)</span><input type="number" id="mouthLat" step="0.5"></label>
+            <label class="ctl"><span class="label">Mouth x (<span class="u-len">in</span>)</span><input type="number" id="mx" step="0.5"></label>
+            <label class="ctl"><span class="label">Mouth y (<span class="u-len">in</span>)</span><input type="number" id="my" step="0.5"></label>
           </div>
-          <p class="help" id="mouthHelp">Offsets are in the robot frame: forward is the way the robot faces, left is positive (right is negative). With no heading set, the robot turns to face the CELL.</p>
+          <label class="ctl"><span class="label">Origin (0, 0) corner</span>
+            <select id="origin">
+              <option value="red-audience">Red alliance · audience side</option>
+              <option value="blue-audience">Blue alliance · audience side</option>
+              <option value="red-far">Red alliance · far side</option>
+              <option value="blue-far">Blue alliance · far side</option>
+            </select></label>
+          <p class="help" id="originHelp"></p>
+          <p class="help">The aim is solved freely (turret-style); the readout gives the heading to point the mouth.</p>
         </fieldset>
 
         <fieldset>
@@ -165,12 +173,6 @@
             </div>
             <span class="help" id="precHelp"></span>
           </div>
-          <div class="ctl-row">
-            <label class="ctl"><span class="label">Robot x (<span class="u-len">in</span>)</span><input type="number" id="rx" step="0.5"></label>
-            <label class="ctl"><span class="label">Robot y (<span class="u-len">in</span>)</span><input type="number" id="ry" step="0.5"></label>
-          </div>
-          <label class="ctl"><span class="label">Robot heading (°, CCW from +x)</span><input type="number" id="rh" step="1" placeholder="auto: face the CELL"></label>
-          <p class="help">x runs toward the blue alliance wall, y away from the audience; (0, 0) is the field center under the HIVE.</p>
         </fieldset>
       </section>
     </aside>
