@@ -14,6 +14,7 @@ fs.writeFileSync(path.join(ROOT, 'src', 'data.js'), dataJs, 'utf8');
 
 const engine = rd('src', 'engine.js');
 const worker = rd('src', 'worker.js');
+const units = rd('src', 'units.js');
 const app = rd('src', 'app.js');
 const css = rd('src', 'styles.css');
 const markup = rd('src', 'markup.html');
@@ -34,6 +35,7 @@ const fragment = [
   `<script>\n${safe(dataJs)}</script>`,
   `<script>\n${safe(engine)}\n</script>`,
   `<script>\n${safe(workerSrc)}</script>`,
+  `<script>\n${safe(units)}\n</script>`,
   `<script>\n${safe(app)}\n</script>`,
 ].join('\n');
 

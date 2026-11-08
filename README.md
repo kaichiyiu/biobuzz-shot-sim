@@ -51,7 +51,7 @@ Use the live page above, or open `dist/preview.html` (or `docs/index.html`) in a
 
 ```bash
 node tools/build.mjs                      # rebuild dist/ from src/ and data/
-node --test tests/engine.test.mjs         # unit tests (geometry, flight, motor model, verdicts, symmetry)
+npm test                                  # unit tests (geometry, flight, motor model, verdicts, symmetry, units, mouth offsets)
 python tests/crosscheck/oracle.py --selftest
 node tests/crosscheck/compare.mjs         # engine vs. independent Python oracle
 ```
@@ -68,6 +68,7 @@ data/field.json         field, HIVE, CELL and frame geometry
 data/shooter.json       wheels, flywheel presets, model constants, precision presets
 src/engine.js           physics, hit test, search, motor model, verdicts (no DOM; works in Node, a worker or the page)
 src/worker.js           Web Worker wrapper
+src/units.js            display units (metric / imperial) format + parse layer
 src/app.js              UI: field, side view, 3-D view (three.js r128), readouts, motor table
 src/styles.css, src/markup.html
 tools/build.mjs         builds dist/biobuzz-shot-sim.html (single file), dist/preview.html and docs/index.html (GitHub Pages)

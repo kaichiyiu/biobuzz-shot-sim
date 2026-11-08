@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var D = window.SHOT_DATA, E = window.ShotEngine;
+  var D = window.SHOT_DATA, E = window.ShotEngine, U = window.ShotUnits;
   E.init(D);
   var F = D.field, SH = D.shooter, MODEL = SH.model;
   var $ = function (id) { return document.getElementById(id); };
@@ -15,17 +15,38 @@
   function pct(x, d) { return x == null || !isFinite(x) ? '—' : nf(x * 100, d || 0) + '%'; }
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+  // ------------------------------------------------------------------ display units (issue #16)
+  // The engine works in inches / m/s / kg. Every length, speed and mass shown or typed goes through
+  // these helpers; rpm, degrees, seconds, volts and percentages are never converted.
+  var UNITS_KEY = 'biobuzz-shot-sim.units';
+  function loadUnits() {
+    var m = /[?&]units=(metric|imperial)\b/.exec(location.search);
+    if (m) return m[1];
+    try { return window.localStorage.getItem(UNITS_KEY) || 'imperial'; } catch (e) { return 'imperial'; }
+  }
+  function saveUnits(u) { try { window.localStorage.setItem(UNITS_KEY, u); } catch (e) { /* storage off */ } }
+  U.setSystem(loadUnits());
+  function fmtLen(inches, d) { return U.fmtLen(inches, d); }
+  function fmtSpeed(ms, d) { return U.fmtSpeed(ms, d); }
+  function fmtMass(kg, d) { return U.fmtMass(kg, d); }
+  function parseLen(text) { return U.parseLen(text); }
+  function lenVal(inches) { return Math.round(U.toLen(inches) * 100) / 100; }  // value for a number input
+  function L10n(text) { return U.localizeText(text); }                      // engine strings (in, m/s)
+
   // ------------------------------------------------------------------ state
   var def = SH.defaults || {};
   var wheelById = {};
   SH.wheels.forEach(function (w) { wheelById[w.id] = w; });
   var LIMIT = F.field.half - 9;
+  var MOUTH_MAX = 12;   // matches the engine's mouth offset clamp (in)
   var state = {
     ballId: 'pollen',
     target: 'red',
     hive: { red: F.hive.upSideStart.red, blue: F.hive.upSideStart.blue },
-    robot: { x: F.hive.hiveX.red, y: -48 },
+    robot: { x: F.hive.hiveX.red, y: -48, heading: null },
     h0: def.h0 || 16,
+    mouth: { forward: 0, lateral: 0 },
+    units: U.getSystem(),
     precision: def.precision || 'typical',
     motorId: (D.motors.motors.find(function (m) { return m.freeRpm === 6000; }) || D.motors.motors[0]).id,
     shooter: {
@@ -63,7 +84,8 @@
     var inert = flywheelInertia(s);
     return {
       ballId: state.ballId, target: state.target, hiveState: { red: state.hive.red, blue: state.hive.blue },
-      robot: robot || { x: state.robot.x, y: state.robot.y }, h0: state.h0,
+      robot: robot || { x: state.robot.x, y: state.robot.y, heading: state.robot.heading }, h0: state.h0,
+      mouth: { height: state.h0, forward: state.mouth.forward, lateral: state.mouth.lateral },
       precision: { sigThetaDeg: pr.sigThetaDeg, sigYawDeg: pr.sigYawDeg, sigShooter: pr.sigShooter },
       motorId: state.motorId,
       shooter: {
@@ -109,7 +131,7 @@
           var t = performance.now();
           while (i < pts.length && performance.now() - t < 12) {
             var q = pts[i++];
-            var r = E.evaluate(Object.assign({}, p, { robot: q }), 'coarse');
+            var r = E.evaluate(Object.assign({}, p, { robot: Object.assign({}, p.robot, q) }), 'coarse');
             onCell(q.x, q.y, r.verdict, i, pts.length);
           }
           if (i < pts.length) setTimeout(chunk, 0); else onDone();
@@ -235,14 +257,14 @@
     var fill = $('rateFill');
     fill.style.width = clamp(r.hitRate * 100, 0, 100) + '%';
     fill.style.background = P[cls + '-mark'];
-    $('reason').textContent = r.reason;
+    $('reason').textContent = L10n(r.reason);
     var box = $('warnings');
     box.replaceChildren();
     (r.warnings || []).forEach(function (w) {
       var c = document.createElement('span');
       c.className = 'chip';
       c.innerHTML = ICON.alert;
-      c.appendChild(document.createTextNode(w.text));
+      c.appendChild(document.createTextNode(L10n(w.text)));
       box.appendChild(c);
     });
   }
@@ -278,20 +300,20 @@
       var cm = r.closestMiss;
       fillKV(dl, [
         { label: 'Launch angle', value: '—' }, { label: 'Exit speed', value: '—' },
-        { label: 'Closest try', value: cm ? nf(cm.thetaDeg, 0) + '° · ' + nf(cm.v, 2) + ' m/s' : '—', small: cm && cm.cause ? 'misses: ' + causeWord(cm.cause) : '', wide: true }
+        { label: 'Closest try', value: cm ? nf(cm.thetaDeg, 0) + '° · ' + fmtSpeed(cm.v) : '—', small: cm && cm.cause ? 'misses: ' + causeWord(cm.cause) : '', wide: true }
       ]);
       return;
     }
     var w = b.windows, note = b.reachable === false ? ' (needed; motor can\'t reach it)' : '';
     fillKV(dl, [
       { label: 'Launch angle', value: nf(b.thetaDeg, 1) + '°', small: nf(90 - b.thetaDeg, 1) + '° off vertical' },
-      { label: 'Exit speed' + note, value: nf(b.v, 2) + ' m/s', small: nf(b.vFtS, 1) + ' ft/s' },
+      { label: 'Exit speed' + note, value: fmtSpeed(b.v), small: U.getSystem() === 'metric' ? U.fmtSpeed(b.v, 1, 'imperial') : U.fmtSpeed(b.v, 2, 'metric') },
       { label: 'Aim', value: nf(b.yawOffsetDeg, 1) + '°', small: aimWords(b.yawOffsetDeg) },
-      { label: 'Apex', value: nf(b.apexIn, 0) + ' in', small: nf(b.apexIn / 12, 1) + ' ft above the tiles' },
-      { label: 'Time to CELL', value: b.tToCell != null ? nf(b.tToCell, 2) + ' s' : '—', small: b.entrySpeed != null ? 'enters at ' + nf(b.entrySpeed, 1) + ' m/s' : '' },
-      { label: 'Distance', value: nf(r.distIn, 0) + ' in', small: 'robot to mouth center, flat' },
+      { label: 'Apex', value: fmtLen(b.apexIn, 0), small: (U.getSystem() === 'metric' ? nf(b.apexIn * 0.0254, 2) + ' m' : nf(b.apexIn / 12, 1) + ' ft') + ' above the tiles' },
+      { label: 'Time to CELL', value: b.tToCell != null ? nf(b.tToCell, 2) + ' s' : '—', small: b.entrySpeed != null ? 'enters at ' + fmtSpeed(b.entrySpeed, 1) : '' },
+      { label: 'Distance', value: fmtLen(r.distIn, 0), small: 'shooter mouth to CELL mouth center, flat' },
       { label: 'Scoring window', wide: true,
-        value: nf(w.thetaDeg[0], 1) + '–' + nf(w.thetaDeg[1], 1) + '° · ' + nf(w.v[0], 2) + '–' + nf(w.v[1], 2) + ' m/s',
+        value: nf(w.thetaDeg[0], 1) + '–' + nf(w.thetaDeg[1], 1) + '° · ' + nf(U.toSpeed(w.v[0]), 2) + '–' + fmtSpeed(w.v[1], 2),
         small: 'aim ' + nf(w.yawDeg[0] - b.yawDeg, 1) + '° to +' + nf(w.yawDeg[1] - b.yawDeg, 1) + '° · each range holds the other two at the best value' }
     ]);
   }
@@ -314,7 +336,7 @@
     var spinRpm = m.S0 * (r.best ? r.best.v : 0) / (bp.rIn * 0.0254) * 60 / (2 * Math.PI);
     var sg = r.sigma || {};
     fillKV(dl, [
-      { label: 'Wheel speed', value: nf(m.wheelRpm, 0) + ' rpm', small: nf(p.shooter.wheelDiameterMm, 0) + ' mm wheel' },
+      { label: 'Wheel speed', value: nf(m.wheelRpm, 0) + ' rpm', small: fmtLen(p.shooter.wheelDiameterMm / 25.4, 1) + ' wheel' },
       { label: 'Motor speed', value: nf(m.motorRpm, 0) + ' rpm', small: 'of ' + nf(m.usableFreeRpm, 0) + ' usable (' + pct(m.headroom) + ')' },
       { label: 'Dip per shot', value: pct(m.dip, 1), small: !isFinite(m.recoveryMs) ? 'never recovers' : (m.control === 'power' ? 'within 1% after ' : 'back to speed in ') + (m.recoveryMs >= 1000 ? nf(m.recoveryMs / 1000, 1) + ' s' : nf(m.recoveryMs, 0) + ' ms') },
       { label: 'Spin-up', value: isFinite(m.spinUpMs) ? nf(m.spinUpMs / 1000, 2) + ' s' : '—', small: 'from a standstill' },
@@ -327,7 +349,9 @@
     fill.className = 'meter-fill' + (h > 1 ? ' bad' : h > 0.8 ? ' warn' : '');
   }
 
+  var lastMotorRows = null;
   function renderMotors(rows) {
+    lastMotorRows = rows;
     var body = $('motorRows'), fsf = MODEL.freeSpeedFactor || 1, g = state.shooter.gear;
     body.replaceChildren();
     rows.forEach(function (row) {
@@ -365,7 +389,7 @@
       tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       body.appendChild(tr);
     });
-    $('motorsCaption').textContent = 'Same wheel (' + nf(wheelById[state.shooter.wheelId].diameterMm, 0) + ' mm), gearing (' + g + ' : 1), ' + (state.shooter.control === 'pid' ? 'PID' : 'fixed power') + ' at ' + nf(state.shooter.batteryV, 1) + ' V and shooter. "Gear-up for 80%" is the wheel : motor ratio that would run the motor at 80% of its free speed. Click a row to use that motor.';
+    $('motorsCaption').textContent = 'Same wheel (' + fmtLen(wheelById[state.shooter.wheelId].diameterMm / 25.4, 1) + '), gearing (' + g + ' : 1), ' + (state.shooter.control === 'pid' ? 'PID' : 'fixed power') + ' at ' + nf(state.shooter.batteryV, 1) + ' V and shooter. "Gear-up for 80%" is the wheel : motor ratio that would run the motor at 80% of its free speed. Click a row to use that motor.';
   }
 
   // ------------------------------------------------------------------ field view
@@ -539,7 +563,9 @@
     c.fillText('UP', sx(lx), sy(mc[1]));
 
     // ground track + aim
-    var r = current, heading = r ? (r.best ? r.best.yawDeg : r.psi0Deg) : 90;
+    var r = current, aimHeading = r ? (r.best ? r.best.yawDeg : r.psi0Deg) : 90;
+    var heading = state.robot.heading != null ? state.robot.heading : (r && r.robotHeadingDeg != null ? r.robotHeadingDeg : aimHeading);
+    var lp = r && r.launch ? r.launch : { x: state.robot.x, y: state.robot.y };
     if (r && r.trajectory && r.best && r.best.reachable !== false) {
       c.strokeStyle = P.pollen;
       c.lineWidth = 3;
@@ -550,7 +576,7 @@
     } else {
       c.strokeStyle = rgba(P['ink-2'], 0.6);
       c.lineWidth = 1.5;
-      line(c, [sx(state.robot.x), sy(state.robot.y)], [sx(mc[0]), sy(mc[1])]);
+      line(c, [sx(lp.x), sy(lp.y)], [sx(mc[0]), sy(mc[1])]);
     }
     c.beginPath();
     c.arc(sx(mc[0]), sy(mc[1]), Math.max(3, 1.2 * K), 0, 2 * Math.PI);
@@ -577,6 +603,15 @@
     c.arc(0, 0, Math.max(3, 1.3 * K), 0, 2 * Math.PI);
     c.fill();
     c.restore();
+    if (state.mouth.forward || state.mouth.lateral) {   // shooter mouth marker
+      c.fillStyle = P.pollen;
+      c.strokeStyle = P.ink;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.arc(sx(lp.x), sy(lp.y), Math.max(3, 1.1 * K), 0, 2 * Math.PI);
+      c.fill();
+      c.stroke();
+    }
     if (document.activeElement === fieldCanvas) {
       c.strokeStyle = P.pollen;
       c.lineWidth = 1.5;
@@ -591,8 +626,8 @@
   function moveRobotTo(x, y, mode) {
     state.robot.x = Math.round(clamp(x, -LIMIT, LIMIT) * 2) / 2;
     state.robot.y = Math.round(clamp(y, -LIMIT, LIMIT) * 2) / 2;
-    $('rx').value = state.robot.x;
-    $('ry').value = state.robot.y;
+    $('rx').value = lenVal(state.robot.x);
+    $('ry').value = lenVal(state.robot.y);
     drawField();
     if (mode === 'coarse') {
       if (!dragFrame) dragFrame = requestAnimationFrame(function () { dragFrame = 0; request('coarse'); });
@@ -641,7 +676,7 @@
   fieldCanvas.addEventListener('blur', drawField);
 
   // heat map
-  function heatParamsKey(p) { var q = Object.assign({}, p); delete q.robot; return JSON.stringify(q); }
+  function heatParamsKey(p) { var q = Object.assign({}, p, { robotHeading: p.robot.heading }); delete q.robot; return JSON.stringify(q); }
   function startScan() {
     if (!backend) return;
     var p = params(), key = heatParamsKey(p);
@@ -713,11 +748,11 @@
     c.fillStyle = P['ink-3'];
     c.textAlign = 'right';
     c.textBaseline = 'middle';
-    for (var z = 0; z <= zTop; z += 12) { line(c, [X(s0), Y(z)], [X(s1), Y(z)]); c.fillText(String(z), m.l - 6, Y(z)); }
+    for (var z = 0; z <= zTop; z += 12) { line(c, [X(s0), Y(z)], [X(s1), Y(z)]); c.fillText(nf(U.toLen(z), 0), m.l - 6, Y(z)); }
     c.textAlign = 'center';
     c.textBaseline = 'top';
     var stepS = (s1 - s0) > 160 ? 48 : 24;
-    for (var sVal = Math.ceil(s0 / stepS) * stepS; sVal <= s1; sVal += stepS) c.fillText(String(sVal), X(sVal), Y(0) + 6);
+    for (var sVal = Math.ceil(s0 / stepS) * stepS; sVal <= s1; sVal += stepS) c.fillText(nf(U.toLen(sVal), 0), X(sVal), Y(0) + 6);
     c.strokeStyle = P['ink-2'];
     c.lineWidth = 1.5;
     line(c, [X(s0), Y(0)], [X(s1), Y(0)]);
@@ -740,12 +775,13 @@
     }
 
     // robot + mast
-    var h0 = p.h0;
+    // s = 0 is the shooter mouth; the robot body is centred on the robot centre projected on the shot line
+    var h0 = p.h0, sc = (p.robot.x - sv.origin[0]) * sv.uAxis[0] + (p.robot.y - sv.origin[1]) * sv.uAxis[1];
     c.fillStyle = P.robot;
     c.strokeStyle = P['ink-2'];
     c.lineWidth = 1.5;
-    c.fillRect(X(-9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
-    c.strokeRect(X(-9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
+    c.fillRect(X(sc - 9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
+    c.strokeRect(X(sc - 9), Y(Math.min(h0, 12)), 18 * kk, Math.min(h0, 12) * kk);
     if (h0 > 12) { c.lineWidth = 3; line(c, [X(0), Y(12)], [X(0), Y(h0)]); }
     c.fillStyle = P.ink;
     c.beginPath();
@@ -777,14 +813,14 @@
       c.font = '600 12px "Barlow Semi Condensed", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
-      c.fillText((ok ? 'apex ' : 'closest try · apex ') + Math.round(apex[1]) + ' in', X(apex[0]), Y(apex[1]) - 6);
+      c.fillText((ok ? 'apex ' : 'closest try · apex ') + fmtLen(apex[1], 0), X(apex[0]), Y(apex[1]) - 6);
     }
     c.fillStyle = P['ink-2'];
     c.font = '500 11px "JetBrains Mono", monospace';
     c.textAlign = 'left';
     c.textBaseline = 'top';
-    c.fillText('in · along the shot', m.l, 4);
-    $('viewsCaption').textContent = r.best ? 'Launch ' + nf(r.best.thetaDeg, 1) + '° at ' + nf(r.best.v, 2) + ' m/s from ' + nf(p.h0, 0) + ' in up. Side view and 3-D view are to scale.' : 'No clean arc from this spot — the red line is the closest try.';
+    c.fillText(U.lenUnit() + ' · along the shot from the mouth', m.l, 4);
+    $('viewsCaption').textContent = r.best ? 'Launch ' + nf(r.best.thetaDeg, 1) + '° at ' + fmtSpeed(r.best.v) + ' from ' + fmtLen(p.h0, 0) + ' up. Side view and 3-D view are to scale.' : 'No clean arc from this spot — the red line is the closest try.';
   }
 
   // ------------------------------------------------------------------ 3-D view
@@ -897,9 +933,10 @@
       clear(dynGroup);
       var r = current, p = currentParams;
       if (!r || !p) return;
-      var heading = r.best ? r.best.yawDeg : r.psi0Deg;
+      var aimHd = r.best ? r.best.yawDeg : r.psi0Deg;
+      var heading = r.robotHeadingDeg != null ? r.robotHeadingDeg : aimHd;
       if (!userOrbited) {
-        orbit.az = Math.atan2(Math.sin(heading * DEG), -Math.cos(heading * DEG)) + 0.55;
+        orbit.az = Math.atan2(Math.sin(aimHd * DEG), -Math.cos(aimHd * DEG)) + 0.55;
         orbit.target.set((p.robot.x + F.hive.hiveX[p.target]) / 2, 22, -p.robot.y / 2);
       }
       var bodyH = Math.min(p.h0, 12);
@@ -911,7 +948,8 @@
       edges.position.copy(robot.position);
       edges.rotation.copy(robot.rotation);
       dynGroup.add(edges);
-      if (p.h0 > bodyH) rod([p.robot.x, p.robot.y, bodyH], [p.robot.x, p.robot.y, p.h0], 0.8, col('ink-2'), dynGroup);
+      var lp3 = r.launch || { x: p.robot.x, y: p.robot.y };
+      if (p.h0 > bodyH) rod([lp3.x, lp3.y, bodyH], [lp3.x, lp3.y, p.h0], 0.8, col('ink-2'), dynGroup);
       var path = r.trajectory || (r.closestMiss && r.closestMiss.path);
       var ok = !!r.trajectory && r.best && r.best.reachable !== false;
       if (path) {
@@ -1003,10 +1041,22 @@
       else if (key === 'type') val = state.shooter.type;
       else if (key === 'precision') val = state.precision;
       else if (key === 'control') val = state.shooter.control;
+      else if (key === 'units') val = state.units;
       seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === String(val))); });
     });
     $('h0').value = state.h0;
-    $('h0Out').textContent = state.h0 + ' in';
+    $('h0Out').textContent = fmtLen(state.h0, 0);
+    document.querySelectorAll('.u-len').forEach(function (el) { el.textContent = U.lenUnit(); });
+    var step = U.lenStep();
+    ['rx', 'ry', 'mouthFwd', 'mouthLat'].forEach(function (id) { $(id).step = step; });
+    $('mouthFwd').value = lenVal(state.mouth.forward);
+    $('mouthLat').value = lenVal(state.mouth.lateral);
+    $('mouthFwd').min = $('mouthLat').min = lenVal(-MOUTH_MAX);
+    $('mouthFwd').max = $('mouthLat').max = lenVal(MOUTH_MAX);
+    $('rh').value = state.robot.heading == null ? '' : state.robot.heading;
+    $('pollenSize').textContent = fmtLen(E.ballProps('pollen').Din, 1);
+    $('nectarSize').textContent = fmtLen(E.ballProps('nectar').Din, 1);
+    $('nudgeText').textContent = fmtLen(1, U.getSystem() === 'metric' ? 1 : 0) + ' (Shift: ' + fmtLen(6, 0) + ')';
     motorSel.value = state.motorId;
     $('gear').value = String(state.shooter.gear);
     $('wheel').value = state.shooter.wheelId;
@@ -1032,10 +1082,10 @@
       'A hooded shooter ideally launches at half the wheel\'s surface speed. Measured shooters land around 0.30–0.45, so lower this if your real shots come out slow.';
     var pr = SH.precision[state.precision];
     $('precHelp').textContent = 'Each shot is off by about ±' + pr.sigThetaDeg + '° in angle, ±' + pr.sigYawDeg + '° in aim and ±' + nf(pr.sigShooter * 100, 1) + '% in speed.';
-    $('rx').value = state.robot.x;
-    $('ry').value = state.robot.y;
-    $('rx').min = $('ry').min = -LIMIT;
-    $('rx').max = $('ry').max = LIMIT;
+    $('rx').value = lenVal(state.robot.x);
+    $('ry').value = lenVal(state.robot.y);
+    $('rx').min = $('ry').min = lenVal(-LIMIT);
+    $('rx').max = $('ry').max = lenVal(LIMIT);
     $('tipLabel').textContent = 'TIP ' + state.target + ' HIVE';
   }
 
@@ -1059,6 +1109,7 @@
       else if (key === 'type') state.shooter.type = v;
       else if (key === 'precision') state.precision = v;
       else if (key === 'control') state.shooter.control = v;
+      else if (key === 'units') { setUnits(v); return; }
       changed();
     });
   });
@@ -1076,9 +1127,33 @@
     if (state.shooter.type === 'dual') state.shooter.etaDual = Number(this.value); else state.shooter.etaSingle = Number(this.value);
     changed();
   });
+  // units toggle: display only, so no re-evaluation; just re-render everything from the last result
+  function setUnits(u) {
+    state.units = U.setSystem(u);
+    saveUnits(state.units);
+    syncControls();
+    if (current) { renderVerdict(current); renderArc(current, currentParams); renderMotor(current, currentParams); }
+    drawField(); drawSide();
+    if (lastMotorRows) renderMotors(lastMotorRows);
+    if (mathDialog.open) renderMath();
+  }
+  ['mouthFwd', 'mouthLat'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      var v = parseLen(this.value);
+      if (!isFinite(v)) return syncControls();
+      state.mouth[id === 'mouthFwd' ? 'forward' : 'lateral'] = clamp(v, -MOUTH_MAX, MOUTH_MAX);
+      changed();
+    });
+  });
+  $('rh').addEventListener('change', function () {
+    var t = String(this.value).trim();
+    if (t === '') state.robot.heading = null;
+    else { var hd = Number(t); if (!isFinite(hd)) return syncControls(); state.robot.heading = ((hd % 360) + 540) % 360 - 180; }
+    changed();
+  });
   ['rx', 'ry'].forEach(function (id) {
     $(id).addEventListener('change', function () {
-      var x = Number($('rx').value), y = Number($('ry').value);
+      var x = parseLen($('rx').value), y = parseLen($('ry').value);
       if (!isFinite(x) || !isFinite(y)) return syncControls();
       moveRobotTo(x, y, 'key');
     });
@@ -1095,7 +1170,11 @@
     var wheel = wheelById[s.wheelId], fi = flywheelInertia(s);
     var f = function (x, d) { return nf(x, d == null ? 2 : d); };
     var pid = sh.control === 'pid';
-    $('mathSub').textContent = bp.label + ' from (' + f(p.robot.x, 1) + ', ' + f(p.robot.y, 1) + ') in, leaving the shooter ' + f(p.h0, 0) + ' in up, into the ' +
+    var lpm = r.launch || { x: p.robot.x, y: p.robot.y }, Lu = U.lenUnit();
+    var moved = Math.abs(lpm.x - p.robot.x) > 1e-9 || Math.abs(lpm.y - p.robot.y) > 1e-9;
+    $('mathSub').textContent = bp.label + ' from (' + f(U.toLen(p.robot.x), 1) + ', ' + f(U.toLen(p.robot.y), 1) + ') ' + Lu +
+      (moved ? ' (shooter mouth at (' + f(U.toLen(lpm.x), 1) + ', ' + f(U.toLen(lpm.y), 1) + ') ' + Lu + ', robot facing ' + f(r.robotHeadingDeg, 0) + '°)' : '') +
+      ', leaving the shooter ' + fmtLen(p.h0, 0) + ' up, into the ' +
       p.target + ' HIVE · ' + mo.label + ' · ' + wheel.label + ' · ' + (pid ? 'PID velocity' : 'fixed power') + ' at ' + f(sh.batteryV, 1) + ' V. Every number below is for this spot.';
 
     function sec(title, intro) {
@@ -1130,12 +1209,12 @@
     function ms(x) { return !isFinite(x) ? 'never' : x >= 1000 ? f(x / 1000, 2) + ' s' : f(x, 0) + ' ms'; }
 
     if (!b || !m) {
-      var s0 = sec('No scoring arc from here', [r.reason + '. With no arc there is no exit speed to turn into wheel or motor rpm, so only the ball-flight rules below apply.']);
+      var s0 = sec('No scoring arc from here', [L10n(r.reason) + '. With no arc there is no exit speed to turn into wheel or motor rpm, so only the ball-flight rules below apply.']);
       note(s0, 'Turn on the verdict map to find spots where an arc exists.');
     } else {
       var v = b.v, dual = dt.type === 'dual';
 
-      var s1 = sec('1 · Exit speed → wheel rpm → motor rpm', ['The shot needs the ball to leave at ', { b: f(v, 2) + ' m/s' }, '. The wheel has to spin faster than that, because the ball only picks up part of the wheel surface speed.']);
+      var s1 = sec('1 · Exit speed → wheel rpm → motor rpm', ['The shot needs the ball to leave at ', { b: fmtSpeed(v) + (U.speedUnit() === 'm/s' ? '' : ' (' + f(v, 2) + ' m/s)') }, '. The formulas below work in SI units (m/s, m, kg). The wheel has to spin faster than that, because the ball only picks up part of the wheel surface speed.']);
       if (dual) {
         eq(s1, 'Exit efficiency', 'v_exit = η × (v_bottom + v_top) ÷ 2,  v_top = k × v_bottom', 'η ' + f(dt.etaDual, 2) + ', k ' + f(dt.topRatio, 2) + ' → v_exit = ' + f(dt.exitFactor, 3) + ' × v_bottom');
         eq(s1, 'Bottom wheel surface speed', 'v_bottom = v_exit ÷ (η(1 + k) ÷ 2)', f(v, 2) + ' ÷ ' + f(dt.exitFactor, 3), f(dt.vWheel, 2) + ' m/s');
@@ -1192,7 +1271,7 @@
         var mm = E.motorModel(p.motorId, Object.assign({}, sh, { wheelDiameterMm: w.diameterMm, inertiaKgM2: I }), p.ballId, v);
         var tr = document.createElement('tr');
         if (w.id === s.wheelId) tr.className = 'sel';
-        [w.label, f(w.diameterMm, 0) + ' mm', f(w.massG, 0) + ' g', sci(I), f(mm.wheelRpm, 0), pct(mm.headroom), pct(mm.dip, 1), ms(mm.recoveryMs)].forEach(function (t) {
+        [w.label, fmtLen(w.diameterMm / 25.4, 1), fmtMass(w.massG / 1000, U.massUnit() === 'g' ? 0 : 2), sci(I), f(mm.wheelRpm, 0), pct(mm.headroom), pct(mm.dip, 1), ms(mm.recoveryMs)].forEach(function (t) {
           var td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
         });
         tb.appendChild(tr);
@@ -1203,7 +1282,7 @@
 
     var area = bp.areaM2, weight = bp.massKg * A.g;
     var s5 = sec('5 · Ball flight', ['The path is solved step by step (every 2.5 ms) with gravity, air drag and backspin lift. A shot only counts if the ball goes through the CELL mouth without touching the rim, the frame, another CELL, a wall or the floor.']);
-    eq(s5, 'Ball', 'A = π r²', bp.label + ': ' + f(bp.Din, 2) + ' in, ' + f(bp.massKg * 1000, 1) + ' g', f(area * 1e4, 1) + ' cm²');
+    eq(s5, 'Ball', 'A = π r²', bp.label + ': ' + fmtLen(bp.Din, 2) + ', ' + fmtMass(bp.massKg, U.massUnit() === 'g' ? 1 : 2), f(area * 1e4, 1) + ' cm²');
     if (b) {
       var v0 = b.v, th = b.thetaDeg * DEG, S0 = m ? m.S0 : 1;
       var FD = 0.5 * A.rho * A.cd * area * v0 * v0, CL = A.clSlope * Math.min(S0, A.clSMax), FL = 0.5 * A.rho * CL * area * v0 * v0;
@@ -1211,8 +1290,8 @@
       eq(s5, 'Backspin lift at launch', 'F_L = ½ ρ C_L A v²,  C_L = 0.20 × min(S, 1)', 'S = ' + f(S0, 2) + ' → C_L ' + f(CL, 2), f(FL, 3) + ' N (' + f(FL / weight, 2) + ' × ball weight)');
       eq(s5, 'Launch', 'v_x = v cos θ,  v_z = v sin θ', f(v0, 2) + ' m/s at ' + f(b.thetaDeg, 1) + '°', f(v0 * Math.cos(th), 2) + ' and ' + f(v0 * Math.sin(th), 2) + ' m/s');
       var rise = Math.pow(v0 * Math.sin(th), 2) / (2 * A.g) / 0.0254;
-      eq(s5, 'Apex', 'no air: h₀ + v_z² ÷ 2g   ·   with air: simulated', f(p.h0, 0) + ' + ' + f(rise, 1) + ' = ' + f(p.h0 + rise, 1) + ' in without air', f(b.apexIn, 1) + ' in with air');
-      if (b.tToCell != null) eq(s5, 'Into the CELL', 'simulated', 'after ' + f(b.tToCell, 2) + ' s', 'entering at ' + f(b.entrySpeed, 2) + ' m/s');
+      eq(s5, 'Apex', 'no air: h₀ + v_z² ÷ 2g   ·   with air: simulated', f(U.toLen(p.h0), 0) + ' + ' + f(U.toLen(rise), 1) + ' = ' + fmtLen(p.h0 + rise, 1) + ' without air', fmtLen(b.apexIn, 1) + ' with air');
+      if (b.tToCell != null) eq(s5, 'Into the CELL', 'simulated', 'after ' + f(b.tToCell, 2) + ' s', 'entering at ' + fmtSpeed(b.entrySpeed, 2));
     }
 
     var sg = r.sigma || {}, pr = SH.precision[state.precision];
@@ -1221,7 +1300,7 @@
     if (sg.v != null) eq(s6, 'Speed scatter', 'σ_v = √(σ_shots² + σ_motor² + σ_recovery²)', '√(' + pct(sg.shooter, 2) + '² + ' + pct(sg.motor, 2) + '² + ' + pct(sg.recovery, 2) + '²)', '±' + pct(sg.v, 2));
     if (b) {
       var wn = b.windows;
-      eq(s6, 'Scoring window at the best aim', 'range that still scores, others held at best', f(wn.thetaDeg[0], 1) + '–' + f(wn.thetaDeg[1], 1) + '° · ' + f(wn.v[0], 2) + '–' + f(wn.v[1], 2) + ' m/s');
+      eq(s6, 'Scoring window at the best aim', 'range that still scores, others held at best', f(wn.thetaDeg[0], 1) + '–' + f(wn.thetaDeg[1], 1) + '° · ' + f(U.toSpeed(wn.v[0]), 2) + '–' + fmtSpeed(wn.v[1], 2));
     }
     eq(s6, 'Hit rate', 'share of scattered shots that score', '', pct(r.hitRate, 0));
     eq(s6, 'Verdict', '≥ 80% (and PID under 92% speed) → POSSIBLE · 40–80% → NOT CONSISTENT · under 40%, no arc, or too slow → WON’T WORK', '', r.verdict);
