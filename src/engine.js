@@ -555,16 +555,21 @@
     var ballId = params.ballId === 'nectar' ? 'nectar' : 'pollen';
     var target = params.target === 'blue' ? 'blue' : 'red';
     var hs = normState(params.hiveState);
-    var rob = params.robot || {};
-    var rx = num(rob.x, G.hx.red), ry = num(rob.y, -48);
-    var L = G.robotLimit;
-    var x = clamp(rx, -L, L), y = clamp(ry, -L, L);
+    // shooter mouth (SPEC 4): the launch point itself, in the engine frame (field centre origin, in),
+    // plus its height above the tiles. Legacy params.robot {x, y} is still read as the mouth position.
+    // The mouth stays inside the walls by one ball radius. Aim yaw is searched freely (turret-style).
+    var mo = params.mouth || {}, rob = params.robot || {};
+    var mxIn = num(mo.x, num(rob.x, G.hx.red)), myIn = num(mo.y, num(rob.y, -48));
+    var L = G.half - ballProps(ballId).rIn;
+    var x = clamp(mxIn, -L, L), y = clamp(myIn, -L, L);
+    var h0 = clamp(num(mo.height, num(params.h0, num(def.h0, 16))), 4, 29);
     var prDef = (sd.precision && sd.precision[def.precision || 'typical']) || { sigThetaDeg: 1, sigYawDeg: 1, sigShooter: 0.015 };
     var pr = params.precision || {};
     return {
       ballId: ballId, target: target, hiveState: hs,
-      robot: { x: x, y: y }, robotIn: { x: rx, y: ry }, clamped: (x !== rx || y !== ry),
-      h0: clamp(num(params.h0, num(def.h0, 16)), 4, 29),
+      mouth: { x: x, y: y, height: h0 }, mouthIn: { x: mxIn, y: myIn }, mouthLimit: L,
+      clamped: (x !== mxIn || y !== myIn), h0: h0,
+      launch: { x: x, y: y },
       precision: {
         sigThetaDeg: Math.max(1e-3, num(pr.sigThetaDeg, prDef.sigThetaDeg)),
         sigYawDeg: Math.max(1e-3, num(pr.sigYawDeg, prDef.sigYawDeg)),
@@ -670,7 +675,7 @@
     var hb = G.hiveBox;
     var T = ob.T;
     var cen = mouthCentroid(p.target, T.sg);
-    var x0 = p.robot.x, y0 = p.robot.y;
+    var x0 = p.launch.x, y0 = p.launch.y;
     var mouth = cellWorld(T.hx, T.sg, true).mouth;
     // horizontal distance range from the robot to the mouth pentagon (projected, convex)
     var dmax = 0, dmin = Infinity, inside = true, sgn = 0;
@@ -969,7 +974,7 @@
 
   function gridKey(p, S0) {
     return [p.ballId, S0.toFixed(4), p.target, p.hiveState.red, p.hiveState.blue,
-      p.robot.x.toFixed(3), p.robot.y.toFixed(3), p.h0.toFixed(3)].join('|');
+      p.launch.x.toFixed(3), p.launch.y.toFixed(3), p.h0.toFixed(3)].join('|');
   }
 
   function getGrid(p, table) {
@@ -1396,21 +1401,16 @@
   }
 
   // ------------------------------------------------------------------ warnings
-  var ROBOT_HALF = 9;
-  function warningsFor(p, headingDeg) {
-    var G = S.G, W = [], x = p.robot.x, y = p.robot.y;
+  function warningsFor(p) {
+    var G = S.G, W = [], x = p.mouth.x, y = p.mouth.y, rb = ballProps(p.ballId).rIn;
     if (p.clamped) {
-      W.push({ code: 'CLAMPED', text: 'Robot moved back inside the field — its centre can be at most ' + fmt(G.robotLimit, 1) + ' in from the middle in x and y' });
+      W.push({ code: 'CLAMPED', text: 'Shooter mouth moved back inside the field — it can be at most ' + fmt(p.mouthLimit, 1) + ' in from the middle in x and y' });
     }
-    var c = Math.cos(headingDeg * DEG), s = Math.sin(headingDeg * DEG), onLeg = false;
-    G.legs.forEach(function (leg) {
+    var onLeg = G.legs.some(function (leg) {
       var base = leg[0][2] <= leg[1][2] ? leg[0] : leg[1];
-      var dx = base[0] - x, dy = base[1] - y;
-      var lx = dx * c + dy * s, ly = -dx * s + dy * c;
-      var ex = Math.max(Math.abs(lx) - ROBOT_HALF, 0), ey = Math.max(Math.abs(ly) - ROBOT_HALF, 0);
-      if (Math.hypot(ex, ey) < G.tubeR) onLeg = true;
+      return Math.hypot(base[0] - x, base[1] - y) < G.tubeR + rb;
     });
-    if (onLeg) W.push({ code: 'ON_FRAME_LEG', text: 'Robot overlaps a HIVE frame leg — it cannot sit here' });
+    if (onLeg) W.push({ code: 'ON_FRAME_LEG', text: 'Shooter mouth is on a HIVE frame leg — the robot cannot put it there' });
     var under = ['red', 'blue'].some(function (al) { return Math.abs(x - G.hx[al]) <= G.W2 && Math.abs(y) <= G.swingMaxU; });
     if (p.h0 > G.swingWarnZ && under) {
       W.push({ code: 'TALL_UNDER_HIVE', text: 'Shooter exit is above ' + fmt(G.swingWarnZ, 1) + ' in while under the HIVE — a TIP could hit it' });
@@ -1438,7 +1438,8 @@
       sigma: { thetaDeg: pr.sigThetaDeg, yawDeg: pr.sigYawDeg, v: null, shooter: pr.sigShooter, motor: null, recovery: null },
       trajectory: null, ghosts: [], missCause: null, warnings: [],
       timings: { tableMs: tableMs, coarseMs: 0, fineMs: 0, totalMs: 0 },
-      mode: mode, robot: { x: p.robot.x, y: p.robot.y }, h0: p.h0, S0: S0, gridHits: grid.nHits, closestMiss: null
+      mode: mode, mouth: { x: p.mouth.x, y: p.mouth.y, height: p.h0 },
+      launch: { x: p.launch.x, y: p.launch.y, z: p.h0 }, aimHeadingDeg: null, h0: p.h0, S0: S0, gridHits: grid.nHits, closestMiss: null
     };
     var coarseMs, fineMs = 0;
     if (grid.nHits === 0) {
@@ -1492,7 +1493,9 @@
         res.missCause = uncapped ? null : nearMissCause(v, sel);
       }
     }
-    res.warnings = warningsFor(p, res.best ? res.best.yawDeg : ctx.psi0);
+    // heading to point the mouth (engine frame, deg CCW from +x): the best arc's yaw, else the line to the CELL
+    res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
+    res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
     res.timings.totalMs = now() - tAll;
@@ -1528,7 +1531,7 @@
     need();
     var step = num(stepIn, 6);
     if (!(step > 0)) step = 6;
-    var lim = num(limitIn, S.G.half - 10.5);
+    var lim = num(limitIn, S.G.half - 4.5);   // 6 in cells centred out to 66 in reach 69 in (mouth limit ~69.1)
     var n = Math.floor(lim / step + 1e-9), pts = [];
     for (var j = -n; j <= n; j++) for (var i = -n; i <= n; i++) pts.push({ x: i * step, y: j * step });
     return pts;
@@ -1538,7 +1541,7 @@
   function sideView(params, result) {
     need();
     var p = normParams(params), G = S.G;
-    var ox = p.robot.x, oy = p.robot.y, heading;
+    var ox = p.launch.x, oy = p.launch.y, heading;
     if (result && result.best) heading = result.best.yawDeg;
     else if (result && typeof result.psi0Deg === 'number') heading = result.psi0Deg;
     else {

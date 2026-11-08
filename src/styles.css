@@ -110,6 +110,8 @@ p { margin: 0; }
 .brand-mark { width: 34px; height: 34px; flex: none; }
 .brand h1 { font-size: 24px; line-height: 1.05; letter-spacing: 0.01em; }
 .brand .sub { color: var(--ink-2); font-size: 14px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.units-seg button { font-size: 12px; }
 .engine-state { font: 500 12.5px/1 var(--mono); color: var(--ink-3); }
 
 .layout {

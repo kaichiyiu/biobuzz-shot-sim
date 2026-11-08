@@ -1,6 +1,6 @@
 # BIOBUZZ Shot Sim — build spec
 
-An in-browser simulator for FTC 2026-27 BIOBUZZ. The user drags a robot **anywhere on the
+An in-browser simulator for FTC 2026-27 BIOBUZZ. The user drags the shooter mouth **anywhere on the
 field**, picks a **goBILDA 8 mm REX (hex) shaft motor** and a flywheel setup, and the sim
 finds the arc needed to put POLLEN or NECTAR into their alliance's upward HIVE CELL, then
 gives exactly one of three verdicts:
@@ -60,6 +60,16 @@ all data is inlined. The page must still work (minus the 3-D view) if that scrip
   (right, seen from the audience). **+y** away from the audience. **+z** up.
   Field interior is |x| ≤ 72, |y| ≤ 72. Tiles are a 6×6 grid of 24 in squares.
 - Headings ψ are measured in the x-y plane from +x, counter-clockwise, degrees.
+- **User field frame (UI only).** Positions are shown and typed relative to an inside wall corner
+  the user picks as (0, 0): x runs along the audience / far wall, y along the alliance wall, both
+  into the field, so the whole field is 0 … 2·half (141 in / 358.1 cm). Default origin: the **red
+  alliance, audience-side corner** (engine (−half, −half)) — the red alliance wall is −x and the
+  audience is −y in `data/field.json`; this corner keeps both axes parallel to the engine axes, so
+  user = engine + half and headings are identical. Other corners flip one or both axes
+  (x_u = half − fx·x, y_u = half − fy·y with fx, fy = ±1 the corner's side). Headings shown to
+  the user are degrees from user +x toward user +y (0–360). Choice saved in localStorage
+  (`biobuzz-shot-sim.origin`); `?origin=red-audience|blue-audience|red-far|blue-far` overrides.
+  Imperial shows inches, metric centimetres (`src/units.js`).
 
 ---------------------------------------------------------------------------------------
 ## 3. Field geometry (from Manual V1; research refines `data/field.json`)
@@ -124,7 +134,12 @@ all data is inlined. The page must still work (minus the 3-D view) if that scrip
   - a = −kd·|v|·v + kl·|v|·(−vz, vρ) − g·ẑ,  kd = ½ρC_D·A/m,  kl = ½ρC_L·A/m
   - RK4, dt = 2.5 ms.
 - 3-D position: P(t) = (x0 + ρ·cos ψ, y0 + ρ·sin ψ, h0 + z) with shooter exit (x0, y0, h0).
-  The shooter exit is at the robot center; h0 is a user setting (4–29 in; 29 in = R105 height limit).
+  The shooter exit (mouth) is set directly: `params.mouth = {x, y, height}` (engine frame, inches;
+  height h0 above the tiles 4–29 in; 29 in = R105 height limit). (x0, y0) is clamped to
+  |x|, |y| ≤ half − r_ball (69.1 in for POLLEN) so the ball starts inside the walls. Legacy
+  `params.robot {x, y}` / `params.h0` are still read as the mouth position / height. No robot body,
+  size or heading is modelled. The aim yaw ψ is searched freely (turret-style); the result's
+  `aimHeadingDeg` (best ψ, else ψ0) is the heading to point the mouth, converted to the user frame in the UI.
 - Trajectory table (per ball + S0): pitch θ = 10°…89° step 1° (80), speed v = 2.0 × 1.02^j m/s up to
   16 m/s (≈106). Store positions as Int16 millimetres every 5 ms. Truncate when descending and
   z < 0.55 m (no h0 ≤ 29 in can still reach the mouth), or t > 2.6 s, or ρ > 5.6 m.
@@ -197,7 +212,7 @@ Speed consistency (fractions, combined in quadrature):
 
 Scatter model: independent Gaussians on pitch (σθ), yaw (σψ) and ln(speed) (σ_v).
 
-1. **Coarse**: ψ0 = heading from the robot (x0, y0) to the mouth centroid.
+1. **Coarse**: ψ0 = heading from the shooter mouth (x0, y0) to the mouth centroid.
    Yaws ψ0 + k·Δψ, k = −8…8, Δψ = max(0.5°, atan2(14, dist)/8) (dist = horizontal distance to the
    centroid, inches). Run every table trajectory at every yaw → boolean hit grid H[θ, v, ψ]
    plus the miss cause per cell.
@@ -223,7 +238,7 @@ Scatter model: independent Gaussians on pitch (σθ), yaw (σψ) and ln(speed) (
    σ breakdown, the 3-D trajectory polyline, and ghost trajectories at the speed-window edges.
 8. Motor comparison: for the current position and settings, coarse hit rate + verdict for every
    motor in motors.json (same gearing and wheel), so the UI shows all goBILDA ratios side by side.
-9. Field scan (heat map): coarse verdict at robot centres on a 6 in grid, |x|, |y| ≤ 63, progressive.
+9. Field scan (heat map): coarse verdict at mouth positions on a 6 in grid, |x|, |y| ≤ 66, progressive.
 
 Performance budget (desktop, single thread): table build < 1.5 s, coarse evaluate < 120 ms,
 full evaluate < 400 ms, full field scan < 45 s (progressive; use 1–4 workers when available).
@@ -244,14 +259,16 @@ Controls: ball (Pollen / Nectar) · target alliance (Red / Blue) · up-CELL side
 (audience side / far side) + a "TIP" button that flips it · motor (all goBILDA 5203 ratios, labels like
 "6000 rpm · 1:1") · motors per wheel · shooter type · wheel diameter · gearing G · top-wheel
 ratio (dual only) · flywheel inertia preset · shooter exit height · robot precision · time between
-shots · robot x / y number inputs.
+shots · shooter mouth x / y number inputs (user frame) · origin corner select ·
+metric / imperial display toggle (in·ft/s·oz or cm·m/s·g; engine stays in inches and m/s; saved in
+localStorage, `?units=metric` overrides).
 
 Views:
 - **Field (top-down)** — the main surface, square, drawn to scale: tiles, perimeter, alliance areas,
   loading zones, gardens, flowers, HIVE frame footprint, both HIVEs' CELL footprints (target up-CELL
-  highlighted, mouth edge marked), the 18 × 18 in robot (rotated to face the shot), aim line and the
-  trajectory's ground track. Drag the robot anywhere (pointer + touch); arrow keys nudge 1 in
-  (Shift = 6 in) when the robot is focused. While dragging run coarse; on release run full.
+  highlighted, mouth edge marked), the origin corner with its x / y axes, the shooter mouth marker
+  with a tick along the aim heading, aim line and the trajectory's ground track. Drag the mouth
+  anywhere (pointer + touch); arrow keys nudge 1 in / 1 cm (Shift = 6) when the field is focused. While dragging run coarse; on release run full.
   Toggle: verdict heat map overlay (field scan) with a progress indicator.
 - **Side view** — orthographic projection onto the shot's vertical plane: floor, the recommended
   arc, ghost arcs at the speed-window edges, projected outlines of the HIVE parts (convex hulls of
@@ -267,8 +284,9 @@ Views:
   spin-up time, σ breakdown.
 - **All goBILDA motors table** — one row per ratio: free rpm, motor rpm needed, % of free speed,
   recovery ms, hit %, verdict chip. Selected motor highlighted; clicking a row selects it.
-- Warnings as chips: robot overlaps a HIVE frame leg; shooter taller than the 25.5 in HIVE swing
-  clearance while under the HIVE; robot outside the field (clamped).
+- Warnings as chips: shooter mouth on a HIVE frame leg (within leg radius + ball radius of a leg
+  base); shooter taller than the 25.5 in HIVE swing clearance while the mouth is under the HIVE;
+  mouth outside the field (clamped).
 - A short "How this works / assumptions" disclosure.
 
 Design (follow exactly):
@@ -323,8 +341,8 @@ Design (follow exactly):
 
 - **Field size:** use the measured field in `data/field.json`: `field.half` = 70.5 (inside wall
   faces, 141 in field), tile pitch 23.5, wall height 11.6 above the tile top. Everywhere this spec
-  says 72, use `field.half`. "Left the field" = beyond half + 6. Robot centre clamp:
-  |x|, |y| ≤ half − 9 (61.5). Field scan grid: 6 in step, centres −60 … +60 (21 × 21).
+  says 72, use `field.half`. "Left the field" = beyond half + 6. Shooter mouth clamp:
+  |x|, |y| ≤ half − r_ball. Field scan grid: 6 in step, centres −66 … +66 (23 × 23).
 - **Zones, gardens, alliance areas, FLOWERs:** from `data/field.json`. FLOWERs are drawn, not ball obstacles.
 - **Frame obstacles:** legs, crossbar and cornerBlocks from `data/field.json` (capsules with the listed
   radii). footBars and logoPanels are drawn only (floor-level / may be absent at events).

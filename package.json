@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node --test tests/engine.test.mjs",
+    "test": "node --test tests/engine.test.mjs tests/units-mouth.test.mjs",
     "crosscheck": "node tests/crosscheck/compare.mjs",
     "oracle:selftest": "python tests/crosscheck/oracle.py --selftest"
   }
