@@ -10,7 +10,7 @@
     if (token !== scanToken) return;
     var end = Math.min(points.length, i + 8);
     for (; i < end; i++) {
-      var q = points[i], p = Object.assign({}, params, { robot: q });
+      var q = points[i], p = Object.assign({}, params, { robot: Object.assign({}, params.robot, q) });
       var r = E.evaluate(p, 'coarse');
       reply({ type: 'scanCell', id: id, x: q.x, y: q.y, verdict: r.verdict, hitRate: r.hitRate, done: i + 1, total: points.length });
     }

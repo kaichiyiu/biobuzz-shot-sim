@@ -548,6 +548,22 @@
     return S.motors[0].id;
   }
 
+  // largest mouth offset from the robot centre in either axis (in): an 18 in robot plus a little overhang
+  var MOUTH_OFFSET_MAX = 12;
+
+  // World launch point (in) and the robot heading used, from the robot pose and the mouth offsets.
+  // With no heading given, the robot faces the target CELL mouth centre from its own centre.
+  function launchPoint(robot, forward, lateral, target, hiveState) {
+    var hd = robot.heading;
+    if (hd == null) {
+      var cen = mouthCentroid(target, normState(hiveState)[target]);
+      hd = Math.atan2(cen[1] - robot.y, cen[0] - robot.x) / DEG;
+    }
+    var c = Math.cos(hd * DEG), s = Math.sin(hd * DEG), lim = S.G.half - 1;
+    var x = robot.x + forward * c - lateral * s, y = robot.y + forward * s + lateral * c;
+    return { x: clamp(x, -lim, lim), y: clamp(y, -lim, lim), headingDeg: hd };
+  }
+
   function normParams(params) {
     need();
     params = params || {};
@@ -559,12 +575,22 @@
     var rx = num(rob.x, G.hx.red), ry = num(rob.y, -48);
     var L = G.robotLimit;
     var x = clamp(rx, -L, L), y = clamp(ry, -L, L);
+    // shooter mouth (SPEC 4): height above the tiles plus forward / lateral offsets from the robot
+    // centre in the robot frame (+forward along the robot heading, +lateral to the robot's left).
+    // Robot heading: degrees CCW from +x; null = the robot turns to face the target mouth centre.
+    var mo = params.mouth || {};
+    var h0 = clamp(num(mo.height, num(params.h0, num(def.h0, 16))), 4, 29);
+    var fwd = clamp(num(mo.forward, 0), -MOUTH_OFFSET_MAX, MOUTH_OFFSET_MAX);
+    var lat = clamp(num(mo.lateral, 0), -MOUTH_OFFSET_MAX, MOUTH_OFFSET_MAX);
+    var hdIn = rob.heading, hd = typeof hdIn === 'number' && isFinite(hdIn) ? hdIn : null;
+    var launch = launchPoint({ x: x, y: y, heading: hd }, fwd, lat, target, hs);
     var prDef = (sd.precision && sd.precision[def.precision || 'typical']) || { sigThetaDeg: 1, sigYawDeg: 1, sigShooter: 0.015 };
     var pr = params.precision || {};
     return {
       ballId: ballId, target: target, hiveState: hs,
-      robot: { x: x, y: y }, robotIn: { x: rx, y: ry }, clamped: (x !== rx || y !== ry),
-      h0: clamp(num(params.h0, num(def.h0, 16)), 4, 29),
+      robot: { x: x, y: y, heading: hd }, robotIn: { x: rx, y: ry }, clamped: (x !== rx || y !== ry),
+      h0: h0, mouth: { height: h0, forward: fwd, lateral: lat },
+      launch: launch,
       precision: {
         sigThetaDeg: Math.max(1e-3, num(pr.sigThetaDeg, prDef.sigThetaDeg)),
         sigYawDeg: Math.max(1e-3, num(pr.sigYawDeg, prDef.sigYawDeg)),
@@ -670,7 +696,7 @@
     var hb = G.hiveBox;
     var T = ob.T;
     var cen = mouthCentroid(p.target, T.sg);
-    var x0 = p.robot.x, y0 = p.robot.y;
+    var x0 = p.launch.x, y0 = p.launch.y;
     var mouth = cellWorld(T.hx, T.sg, true).mouth;
     // horizontal distance range from the robot to the mouth pentagon (projected, convex)
     var dmax = 0, dmin = Infinity, inside = true, sgn = 0;
@@ -969,7 +995,7 @@
 
   function gridKey(p, S0) {
     return [p.ballId, S0.toFixed(4), p.target, p.hiveState.red, p.hiveState.blue,
-      p.robot.x.toFixed(3), p.robot.y.toFixed(3), p.h0.toFixed(3)].join('|');
+      p.launch.x.toFixed(3), p.launch.y.toFixed(3), p.h0.toFixed(3)].join('|');
   }
 
   function getGrid(p, table) {
@@ -1438,7 +1464,8 @@
       sigma: { thetaDeg: pr.sigThetaDeg, yawDeg: pr.sigYawDeg, v: null, shooter: pr.sigShooter, motor: null, recovery: null },
       trajectory: null, ghosts: [], missCause: null, warnings: [],
       timings: { tableMs: tableMs, coarseMs: 0, fineMs: 0, totalMs: 0 },
-      mode: mode, robot: { x: p.robot.x, y: p.robot.y }, h0: p.h0, S0: S0, gridHits: grid.nHits, closestMiss: null
+      mode: mode, robot: { x: p.robot.x, y: p.robot.y, heading: p.robot.heading },
+      launch: { x: p.launch.x, y: p.launch.y, z: p.h0 }, robotHeadingDeg: p.launch.headingDeg, mouth: p.mouth, h0: p.h0, S0: S0, gridHits: grid.nHits, closestMiss: null
     };
     var coarseMs, fineMs = 0;
     if (grid.nHits === 0) {
@@ -1492,7 +1519,7 @@
         res.missCause = uncapped ? null : nearMissCause(v, sel);
       }
     }
-    res.warnings = warningsFor(p, res.best ? res.best.yawDeg : ctx.psi0);
+    res.warnings = warningsFor(p, p.robot.heading != null ? p.robot.heading : (res.best ? res.best.yawDeg : ctx.psi0));
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
     res.timings.totalMs = now() - tAll;
@@ -1538,7 +1565,7 @@
   function sideView(params, result) {
     need();
     var p = normParams(params), G = S.G;
-    var ox = p.robot.x, oy = p.robot.y, heading;
+    var ox = p.launch.x, oy = p.launch.y, heading;
     if (result && result.best) heading = result.best.yawDeg;
     else if (result && typeof result.psi0Deg === 'number') heading = result.psi0Deg;
     else {
@@ -1610,7 +1637,7 @@
       prismDist: prismDist, shellDist: shellDist, capsuleDist: capsuleDist,
       flyFloat: flyFloat, terminalSpeed: terminalSpeed, normParams: normParams, shooterNorm: shooterNorm,
       obstaclesFor: obstaclesFor, mouthCentroid: mouthCentroid, penta: penta,
-      geometry: function () { return S.G; }, tableSpec: TBL, clearCaches: clearCaches,
+      launchPoint: launchPoint, geometry: function () { return S.G; }, tableSpec: TBL, clearCaches: clearCaches,
       kernel: kernel
     }
   };

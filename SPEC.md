@@ -124,7 +124,11 @@ all data is inlined. The page must still work (minus the 3-D view) if that scrip
   - a = −kd·|v|·v + kl·|v|·(−vz, vρ) − g·ẑ,  kd = ½ρC_D·A/m,  kl = ½ρC_L·A/m
   - RK4, dt = 2.5 ms.
 - 3-D position: P(t) = (x0 + ρ·cos ψ, y0 + ρ·sin ψ, h0 + z) with shooter exit (x0, y0, h0).
-  The shooter exit is at the robot center; h0 is a user setting (4–29 in; 29 in = R105 height limit).
+  The shooter exit (mouth) is a user setting: height h0 above the tiles (4–29 in; 29 in = R105 height
+  limit) plus forward / lateral offsets (±12 in) from the robot center in the robot frame. With robot
+  heading φ (CCW from +x; if unset the robot faces the target mouth centroid from its own center):
+  x0 = x_r + f·cos φ − l·sin φ, y0 = y_r + f·sin φ + l·cos φ. Offsets 0 = launch from the robot center.
+  The aim yaw ψ is still searched freely (turret-style); φ only places the mouth.
 - Trajectory table (per ball + S0): pitch θ = 10°…89° step 1° (80), speed v = 2.0 × 1.02^j m/s up to
   16 m/s (≈106). Store positions as Int16 millimetres every 5 ms. Truncate when descending and
   z < 0.55 m (no h0 ≤ 29 in can still reach the mouth), or t > 2.6 s, or ρ > 5.6 m.
@@ -244,7 +248,9 @@ Controls: ball (Pollen / Nectar) · target alliance (Red / Blue) · up-CELL side
 (audience side / far side) + a "TIP" button that flips it · motor (all goBILDA 5203 ratios, labels like
 "6000 rpm · 1:1") · motors per wheel · shooter type · wheel diameter · gearing G · top-wheel
 ratio (dual only) · flywheel inertia preset · shooter exit height · robot precision · time between
-shots · robot x / y number inputs.
+shots · robot x / y number inputs · mouth forward / lateral offsets · robot heading (blank = auto) ·
+metric / imperial display toggle (in·ft/s·oz or cm·m/s·g; engine stays in inches and m/s; saved in
+localStorage, `?units=metric` overrides).
 
 Views:
 - **Field (top-down)** — the main surface, square, drawn to scale: tiles, perimeter, alliance areas,
