@@ -1,6 +1,8 @@
 # BIOBUZZ Shot Sim
 
-**Try it: https://lilrino71.github.io/biobuzz-shot-sim/**
+**Try it: https://kaichiyiu.github.io/biobuzz-shot-sim/**
+
+> Fork of [LILRINO71/biobuzz-shot-sim](https://github.com/LILRINO71/biobuzz-shot-sim) by **LILRINO71**, who built the original simulator: physics engine, HIVE geometry, motor model and Python cross-check. This fork adds features on top. See [What's new in this fork](#whats-new-in-this-fork). The original live version is at https://lilrino71.github.io/biobuzz-shot-sim/.
 
 A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag your shooter mouth anywhere on the field and pick a goBILDA Yellow Jacket motor and flywheel setup. The sim finds the arc that puts POLLEN or NECTAR into your alliance's upward HIVE CELL, then gives exactly one of three answers:
 
@@ -11,6 +13,13 @@ A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag your shooter mouth
 | **WON'T WORK** | No clean arc exists, the motor can't reach the speed, or fewer than 40% score |
 
 ![Verdict map: green spots score reliably, yellow are inconsistent, red won't work](docs/verdict-map.png)
+
+## What's new in this fork
+
+- **Metric / imperial toggle** ([#16](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/16)): in, ft/s, oz or cm, m/s, g. Saved between visits; `?units=` in the URL overrides it.
+- **Shooter mouth placed directly in field coordinates** ([#1](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/1)): pick which corner is (0,0) (`?origin=`). The sim reports the heading to point the mouth.
+
+Planned work is tracked in [Issues](https://github.com/kaichiyiu/biobuzz-shot-sim/issues), e.g. the results-panel redesign (#18), lookup-table export (#4), calibration (#11) and the field heatmap (#15).
 
 ## Features
 
@@ -75,6 +84,14 @@ tools/build.mjs         builds dist/biobuzz-shot-sim.html (single file), dist/pr
 tests/                  node tests, Python oracle and cross-check
 SPEC.md                 full build spec, including decisions made after research
 ```
+
+## Credits
+
+- **Original author:** [LILRINO71](https://github.com/LILRINO71). The original design, physics and validation are their work ([upstream repo](https://github.com/LILRINO71/biobuzz-shot-sim)).
+- **Fork maintainer:** [kaichiyiu](https://github.com/kaichiyiu).
+- Field geometry cross-checked against the official BIOBUZZ field CAD (STEP) from *FIRST*.
+
+Released under the MIT License. The original copyright notice is kept in [LICENSE](LICENSE), as the license requires.
 
 ## Sources
 
