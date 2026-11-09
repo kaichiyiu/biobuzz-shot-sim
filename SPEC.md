@@ -35,12 +35,14 @@ data/shooter.json      flywheel wheel presets, inertia presets, model constants 
 src/engine.js          physics + geometry + search + verdict + motor model (no DOM).
                        UMD: window.ShotEngine / self.ShotEngine (worker) / module.exports (Node)
 src/worker.js          worker wrapper around the engine (protocol in §7)
+src/units.js           display-unit layer (metric / imperial) and user-frame (origin corner) transforms; UMD
 src/app.js             UI
 src/styles.css         UI styles
 src/markup.html        page markup (tools/build.mjs wraps it with CSS, data and scripts)
 tools/build.mjs        writes src/data.js from data/*.json and inlines data + css + js (+ engine and
                        worker source as a string for a Blob worker) into dist/biobuzz-shot-sim.html
 tests/engine.test.mjs  node --test suite (tests/load-data.mjs loads data + engine for Node)
+tests/units-mouth.test.mjs  units, origin-corner transforms, mouth position, aim heading
 tests/crosscheck/      independent Python oracle + comparison harness
 dist/biobuzz-shot-sim.html   single self-contained page (this is what gets published)
 README.md
@@ -274,7 +276,7 @@ Views:
   arc, ghost arcs at the speed-window edges, projected outlines of the HIVE parts (convex hulls of
   projected prism vertices; target CELL emphasised, mouth rim highlighted), apex label. To scale.
 - **3-D view** (three.js r128, simple custom orbit: drag rotates, wheel/pinch zooms): tiles, walls,
-  HIVE frame, CELLs (translucent), robot box, trajectory line, ball at the mouth. Hidden if THREE
+  HIVE frame, CELLs (translucent), a post up to the mouth height, trajectory line, ball at the mouth. Hidden if THREE
   is unavailable.
 - **Verdict panel** — the one bold element: POSSIBLE / NOT CONSISTENT / WON'T WORK with an icon
   (check / exclamation / cross) + hit-rate % + one-sentence reason. aria-live polite.
@@ -314,7 +316,7 @@ Design (follow exactly):
 - Borders/radius by role (panels 6 px radius, hairline rules; not everything a card). No emoji.
   Uppercase micro-labels with letter-spacing. Visible focus rings. prefers-reduced-motion respected.
 - `<title>BIOBUZZ Shot Sim</title>`. Opens in a realistic working state: Pollen, RED target
-  (σ = −1), 6000 rpm motor, single wheel 96 mm hood, robot at (−12.75, −48), Typical precision.
+  (σ = −1), 6000 rpm motor, single wheel 96 mm hood, shooter mouth at engine (−12.75, −48) = user (57.75, 22.5) in from the red-audience corner, Typical precision.
 - Text colors always come from ink tokens (never the alliance/verdict color on body text);
   alliance and verdict meaning always carry a label or icon too.
 
@@ -369,3 +371,11 @@ Design (follow exactly):
   (replaces the fixed inertia presets in the UI).
 - **Show the math** dialog: every formula with this spot's numbers (sections: rpm chain, battery/PID, flywheel,
   wheel comparison table, flight, hit rate/verdict). `motorModel(...).details` and `ShotEngine.constants()` feed it.
+
+## 12. Fork additions (kaichiyiu/biobuzz-shot-sim)
+
+- **Units toggle (#16):** see §2 and §8. Engine units are unchanged (inches, m/s, kg). `src/units.js` converts length, speed and mass only at the UI edge. RPM, degrees and seconds are never converted. The choice is persisted in localStorage `biobuzz-shot-sim.units`; `?units=` overrides it. Switching units re-renders without re-running physics.
+- **Mouth-centric positioning (#1):** see §2, §4 and §8. The user places the shooter mouth (x, y, height) directly; there is no robot body, offsets or robot heading. The mouth is clamped to half − r_ball. Aim yaw is solved freely (turret-style). The result reports `mouth` and `aimHeadingDeg`, and the UI shows it in the user frame (0° = user +x, counter-clockwise, 0–360). The legacy `params.robot` / `params.h0` are accepted as the mouth position / height. Warnings use the mouth point (frame leg: point-near-leg test).
+- **Origin corner:** selectable corner (default red-audience), persisted in `biobuzz-shot-sim.origin`; `?origin=` overrides. Field 0…141 in / 0…358.1 cm.
+- **Tests:** the default mouth reproduces pre-fork results exactly (checked against 427b5e9 at 4 spots). Round trips cover 4 corners × 2 unit systems, plus known headings, clamping, and mouth height vs. required speed.
+- **Planned:** results-panel redesign (#18), rectangular opening for the scoring-window ranges (#3), and the yaw range as position tolerance (#7). Those sections will be updated when that work lands.
