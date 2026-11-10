@@ -110,6 +110,8 @@
     motors: [], motorById: {}, tables: {}, tableKeys: [], obsCache: {}, gridCache: [], ctxCache: []
   };
 
+  var EXT = {};   // optional engine extensions (window, hood, sweep); outside S so init / clearCaches keep them
+
   function num(v, d) { return (typeof v === 'number' && isFinite(v)) ? v : d; }
 
   // ------------------------------------------------------------------ init
@@ -886,7 +888,7 @@
    * a cheap explanatory cause. hits/causes are written at base + y.
    */
   var _out = { code: 0, k: 0, t: 0 };
-  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base) {
+  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits) {   // rhits: optional zero-filled rect-hit output (#3)
     var G = S.G, nY = ycs.length, y;
     var kz = cantIndex(ctx, P, n, apexIdx);
     var zLo = ctx.zBandLoMM, zHi = ctx.zBandHiMM;
@@ -954,6 +956,7 @@
       if (cand) {
         var code = runTest(ctx, yc, P, n, apexIdx, mono, preMax, kz, _out);
         hits[base + y] = code === C_HIT ? 1 : 0;
+        if (rhits && code === C_HIT && q <= G.W2 - ctx.r && B >= ctx.r && B <= G.SH - ctx.r) rhits[base + y] = 1;   // crossing (q, B) of the candidate
         causes[base + y] = code;
         if (code === C_HIT) nh++;
       } else {
@@ -985,15 +988,15 @@
     var fan = coarseYaws(ctx);
     var ycs = fan.yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nT = table.nT, nV = table.nV, nY = ycs.length, N = nT * nV;
-    var hits = new Uint8Array(N * nY), causes = new Uint8Array(N * nY);
+    var hits = new Uint8Array(N * nY), causes = new Uint8Array(N * nY), rectHits = new Uint8Array(N * nY);
     var nHits = 0, minHitJ = nV;
     for (var idx = 0; idx < N; idx++) {
-      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY);
+      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY, rectHits);
       if (nh > 0) { nHits += nh; var j = idx % nV; if (j < minHitJ) minHitJ = j; }
     }
     var grid = {
       key: key, table: table, ctx: ctx, ycs: ycs, yaws: fan.yaws, dPsi: fan.dPsi,
-      nA: nT, nB: nV, nC: nY, hits: hits, causes: causes, nHits: nHits,
+      nA: nT, nB: nV, nC: nY, hits: hits, rectHits: rectHits, causes: causes, nHits: nHits,
       minHitV: minHitJ < nV ? table.speeds[minHitJ] : null,
       ms: 0
     };
@@ -1201,37 +1204,39 @@
 
   // ------------------------------------------------------------------ fine stage (SPEC 7.5)
   var _fbuf = null, _finfo = new Int32Array(4);
-  function fineStage(p, table, grid, sel, mo, sh, bp) {
+  function fineStage(p, table, grid, sel, mo, sh, bp, opts) {   // opts (hood): { theta, vSpanLn, thSpan, yawSpan, skipAim }
     if (!_fbuf) _fbuf = new Int16Array(2 * MAX_SAMPLES);
     var ctx = grid.ctx, pr = p.precision;
     var Wt = Math.max(3, 3 * pr.sigThetaDeg), Wp = Math.max(3, 3 * pr.sigYawDeg), Wv = Math.max(0.06, 3 * sel.sigV);
+    if (opts) { if (opts.vSpanLn > Wv) Wv = opts.vSpanLn; if (opts.thSpan > Wt) Wt = opts.thSpan; if (opts.yawSpan > Wp) Wp = opts.yawSpan; }
+    var th0 = opts && opts.theta != null ? opts.theta : sel.theta;
     var ths = [], yaws = [], sps = [], i, n;
     n = Math.ceil(Wt / 0.25 - 1e-9);
-    for (i = -n; i <= n; i++) { var th = sel.theta + i * 0.25; if (th >= 1 && th <= 89.75) ths.push(th); }
+    for (i = -n; i <= n; i++) { var th = th0 + i * 0.25; if (th >= 1 && th <= 89.75) ths.push(th); }
     n = Math.ceil(Wp / 0.25 - 1e-9);
     for (i = -n; i <= n; i++) yaws.push(sel.yaw + i * 0.25);
     n = Math.ceil(Wv / 0.005 - 1e-9);
     var lv0 = Math.log(sel.v);
     for (i = -n; i <= n; i++) { var vv = i === 0 ? sel.v : Math.exp(lv0 + i * 0.005); if (vv >= 0.5 && vv <= 40) sps.push(vv); }
     var nA = ths.length, nB = sps.length, nC = yaws.length;
-    var hits = new Uint8Array(nA * nB * nC), causes = new Uint8Array(nA * nB * nC);
+    var hits = new Uint8Array(nA * nB * nC), causes = new Uint8Array(nA * nB * nC), rectHits = new Uint8Array(nA * nB * nC);
     var ycs = yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nHits = 0;
     for (var a = 0; a < nA; a++) {
       for (var b = 0; b < nB; b++) {
         fly(table.K, table.S0, ths[a], sps[b], _fbuf, _finfo);
-        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC);
+        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC, rectHits);
       }
     }
-    var view = { hits: hits, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
+    var view = { hits: hits, rectHits: rectHits, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
       thStep: 0.25, lnStep: 0.005, yawStep: 0.25, nHits: nHits };
-    var fsel = nHits ? selectAim(view, p, mo, sh, bp, false) : null;
+    var fsel = nHits && !(opts && opts.skipAim) ? selectAim(view, p, mo, sh, bp, false) : null;
     return { view: view, sel: fsel };
   }
 
   function coarseView(grid) {
     var t = grid.table;
-    return { hits: grid.hits, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
+    return { hits: grid.hits, rectHits: grid.rectHits, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
       thetas: t.thetas, speeds: t.speeds, yaws: grid.yaws, thStep: t.thStep, lnStep: t.lnStep, yawStep: grid.dPsi, nHits: grid.nHits };
   }
 
@@ -1425,6 +1430,8 @@
     mode = mode === 'full' ? 'full' : 'coarse';
     var p = normParams(params), sh = p.shooter, bp = ballProps(p.ballId), mo = S.motorById[p.motorId];
     var S0 = shooterSpin(sh);
+    var hx = params && params.hood && EXT.hood, hn = hx ? hx.norm(params.hood) : null;   // hood extension (#2)
+    if (hn && hn.error) return hx.errorResult(hn.error, p, mode);
     var t0 = now();
     var table = buildTable(p.ballId, S0);
     var tableMs = now() - t0;
@@ -1454,19 +1461,21 @@
         res.closestMiss = { thetaDeg: th, v: vv, yawDeg: yw, cause: cm.cause, path: cm.path };
       }
     } else {
-      var sel = selectAim(view, p, mo, sh, bp, false), uncapped = false, v = view, d = null;
+      var sel = hx ? hx.coarseAim(view, p, mo, sh, bp, hn, false) : selectAim(view, p, mo, sh, bp, false), uncapped = false, v = view, d = null;
       if (!sel) {
         uncapped = true;
-        sel = selectAim(view, p, mo, sh, bp, true);
+        sel = hx ? hx.coarseAim(view, p, mo, sh, bp, hn, true) : selectAim(view, p, mo, sh, bp, true);
         var mcMin = motorCore(mo, sh, bp, grid.minHitV);
         res.code = 'TOO_SLOW';
         res.reason = tooSlowReason(grid.minHitV, mcMin);
         res.minSpeed = grid.minHitV;
+        if (hx && !sel) { res.code = 'NO_ARC'; res.reason = hx.noWindowReason(hn); delete res.minSpeed; }   // no window in the hood's angles
       }
       coarseMs = now() - t1;
       if (!uncapped && mode === 'full') {
         var tf = now();
-        var fine = fineStage(p, table, grid, sel, mo, sh, bp);
+        var fine = fineStage(p, table, grid, sel, mo, sh, bp, hx && hx.fineOpts(sel, hn));
+        if (hx) fine.sel = hx.fineAim(fine.view, p, mo, sh, bp, hn, sel);
         if (fine.sel) { sel = fine.sel; v = fine.view; }
         fineMs = now() - tf;
       }
@@ -1478,6 +1487,7 @@
         }
         var w = d ? d.windows : windowsOf(v, sel);
         var shot = classifyCore(p, ctx, table.K, S0, sel.theta, sel.v, sel.yaw);
+        var sw = EXT.window ? EXT.window.scoringWindow(v, sel, p, mo, sh, bp) : null, gv = sw && !sw.moved ? sw.v : w.v;   // rect window (#3)
         res.best = {
           thetaDeg: sel.theta, yawDeg: sel.yaw, yawOffsetDeg: wrap180(sel.yaw - ctx.psi0),
           v: sel.v, vFtS: sel.v / 0.3048,
@@ -1485,16 +1495,18 @@
           windows: { thetaDeg: w.thetaDeg.slice(), v: w.v.slice(), yawDeg: w.yawDeg.slice() },
           hit: shot.hit, cause: shot.cause, reachable: !uncapped
         };
+        if (EXT.window) res.best.scoringWindow = sw;
         res.motor = sel.mc;
         res.sigma.v = sel.sigV; res.sigma.motor = sel.mc.sigmaMotor; res.sigma.recovery = sel.mc.sigmaRecovery;
         res.trajectory = shot.path;
-        if (w.v[0] < sel.v) res.ghosts.push(classifyCore(p, ctx, table.K, S0, sel.theta, w.v[0], sel.yaw).path);
-        if (w.v[1] > sel.v) res.ghosts.push(classifyCore(p, ctx, table.K, S0, sel.theta, w.v[1], sel.yaw).path);
+        if (gv[0] < sel.v) res.ghosts.push(classifyCore(p, ctx, table.K, S0, sel.theta, gv[0], sel.yaw).path);
+        if (gv[1] > sel.v) res.ghosts.push(classifyCore(p, ctx, table.K, S0, sel.theta, gv[1], sel.yaw).path);
         res.missCause = uncapped ? null : nearMissCause(v, sel);
       }
     }
     // heading to point the mouth (engine frame, deg CCW from +x): the best arc's yaw, else the line to the CELL
     res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
+    if (hx) res.hood = hx.result(v || view, sel, res, hn, mode, { mo: mo, sh: sh, bp: bp });
     res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
@@ -1506,14 +1518,17 @@
   function compareMotors(params) {
     need();
     var p = normParams(params), sh = p.shooter, bp = ballProps(p.ballId), S0 = shooterSpin(sh);
+    var hx = params && params.hood && EXT.hood, hn = hx ? hx.norm(params.hood) : null;
+    if (hn && hn.error) return [];
     var table = buildTable(p.ballId, S0), grid = getGrid(p, table), view = coarseView(grid);
     var dom = grid.nHits === 0 ? dominantCause(grid) : null;
     return S.motors.map(function (mo) {
       var row = { motorId: mo.id, label: mo.label, freeRpm: mo.freeRpm, motorRpm: null, headroom: null, recoveryMs: null,
         hitRate: 0, verdict: VERDICT.BAD, reason: '', code: 'NO_ARC' };
       if (dom) { row.reason = noArcReason(dom.cause); return row; }
-      var sel = selectAim(view, p, mo, sh, bp, false);
+      var sel = hx ? hx.coarseAim(view, p, mo, sh, bp, hn, false) : selectAim(view, p, mo, sh, bp, false);
       if (!sel) {
+        if (hx && !hx.coarseAim(view, p, mo, sh, bp, hn, true)) { row.reason = hx.noWindowReason(hn); return row; }
         var mcMin = motorCore(mo, sh, bp, grid.minHitV);
         row.code = 'TOO_SLOW'; row.reason = tooSlowReason(grid.minHitV, mcMin);
         row.motorRpm = mcMin.motorRpm; row.headroom = mcMin.headroom; row.recoveryMs = mcMin.recoveryMs;
@@ -1614,7 +1629,11 @@
       flyFloat: flyFloat, terminalSpeed: terminalSpeed, normParams: normParams, shooterNorm: shooterNorm,
       obstaclesFor: obstaclesFor, mouthCentroid: mouthCentroid, penta: penta,
       geometry: function () { return S.G; }, tableSpec: TBL, clearCaches: clearCaches,
-      kernel: kernel
+      kernel: kernel,
+      register: function (name, impl) { EXT[name] = impl; }, ext: function (name) { return EXT[name]; },
+      fly: fly, testTraj: testTraj, yawCtx: yawCtx, rateField: rateField, motorCore: motorCore, sigmaVOf: sigmaVOf,
+      selectAim: selectAim, windowsOf: windowsOf, decide: decide, fineStage: fineStage, coarseView: coarseView, getGrid: getGrid,
+      classifyCore: classifyCore, warningsFor: warningsFor, motorById: function () { return S.motorById; }, VERDICT: VERDICT, CAUSE_NAMES: CAUSE_NAMES
     }
   };
 });
