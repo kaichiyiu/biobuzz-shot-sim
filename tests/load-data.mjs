@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
+const EXTENSIONS = ['engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js'];
+
 export function loadData() {
   const rd = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, 'data', f), 'utf8'));
   return { motors: rd('motors.json'), field: rd('field.json'), shooter: rd('shooter.json') };
@@ -14,6 +16,17 @@ export function loadData() {
 
 export function loadEngine() {
   const E = require(path.join(ROOT, 'src', 'engine.js'));
+  for (const f of EXTENSIONS) require(path.join(ROOT, 'src', f));   // register on load, in concatenation order
+  E.init(loadData());
+  return E;
+}
+
+// A second engine instance with NO extensions loaded (the plan's "legacy path"); does not disturb loadEngine().
+export function loadBareEngine() {
+  const f = path.join(ROOT, 'src', 'engine.js'), saved = require.cache[f];
+  delete require.cache[f];
+  const E = require(f);
+  if (saved) require.cache[f] = saved; else delete require.cache[f];
   E.init(loadData());
   return E;
 }

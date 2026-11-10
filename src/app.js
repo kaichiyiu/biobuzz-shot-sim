@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var D = window.SHOT_DATA, E = window.ShotEngine, U = window.ShotUnits;
+  var D = window.SHOT_DATA, E = window.ShotEngine, U = window.ShotUnits, UI = window.ShotUI;
   E.init(D);
   var F = D.field, SH = D.shooter, MODEL = SH.model;
   var $ = function (id) { return document.getElementById(id); };
@@ -66,7 +66,8 @@
       control: def.control || 'pid', batteryV: def.batteryV || (MODEL.batteryV || 12),
       etaSingle: MODEL.etaSingle, etaDual: MODEL.etaDual
     },
-    heat: false
+    heat: false,
+    hood: UI.hood.load(def.hood)
   };
 
 
@@ -96,7 +97,7 @@
       ballId: state.ballId, target: state.target, hiveState: { red: state.hive.red, blue: state.hive.blue },
       mouth: { x: at ? at.x : state.mouth.x, y: at ? at.y : state.mouth.y, height: state.h0 },
       precision: { sigThetaDeg: pr.sigThetaDeg, sigYawDeg: pr.sigYawDeg, sigShooter: pr.sigShooter },
-      motorId: state.motorId,
+      motorId: state.motorId, hood: UI.hood.toParams(state.hood),
       shooter: {
         type: s.type, wheelDiameterMm: wheelById[s.wheelId].diameterMm, motorsPerWheel: s.motorsPerWheel, gear: s.gear,
         topRatio: s.topRatio, inertiaKgM2: inert.total, shotInterval: s.shotInterval,
@@ -127,6 +128,17 @@
     alert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8 15 14H1Z"/><path d="M8 6.3v3.4M8 11.8v.2"/></svg>'
   };
 
+  // ------------------------------------------------------------------ UI modules (src/ui-*.js), see plan section 5.2
+  var deps = { $: $, nf: nf, pct: pct, fmtLen: fmtLen, fmtSpeed: fmtSpeed, U: U, E: E, L10n: L10n, fillKV: fillKV, ICON: ICON, VCLASS: VCLASS,
+    applyEmpty: function () {
+      if (!current) return;
+      current = Object.assign({}, current, { best: null, motor: null, trajectory: null, ghosts: [], closestMiss: null, verdict: null });
+      drawField();
+      drawSide();
+      three.update();
+    } };
+  ['panels', 'results', 'window', 'hoodError', 'rpmPlot'].forEach(function (k) { UI[k].init(deps); });
+
   // ------------------------------------------------------------------ backend (worker or main thread)
   function mainBackend() {
     return {
@@ -144,6 +156,17 @@
             onCell(q.x, q.y, r.verdict, i, pts.length);
           }
           if (i < pts.length) setTimeout(chunk, 0); else onDone();
+        })();
+        return function () { stop = true; };
+      },
+      sweep: function (p, onRow, onDone) {
+        var pts = E.sweepPoints(p, 4), i = 0, stop = false;
+        (function next() {
+          if (stop) return;
+          if (i >= pts.length) return onDone();
+          var q = pts[i++], r = E.evaluate(Object.assign({}, p, { mouth: Object.assign({}, p.mouth, { x: q.x, y: q.y }) }), 'full');
+          onRow(E.sweepRow(r, q.d), i, pts.length);
+          setTimeout(next, 0);
         })();
         return function () { stop = true; };
       }
@@ -167,7 +190,7 @@
     var p;
     try { p = Promise.all([spawnWorker(), spawnWorker()]); } catch (e) { return Promise.resolve(mainBackend()); }
     return p.then(function (ws) {
-      var live = ws[0], scanner = ws[1], pending = {}, seq = 0, scanId = 0, scanCbs = null;
+      var live = ws[0], scanner = ws[1], pending = {}, seq = 0, scanId = 0, scanCbs = null, sweepSeq = 0, sweepId = '', sweepCbs = null;
       live.onmessage = function (e) {
         var m = e.data, cb = pending[m.id];
         if (!cb) return;
@@ -176,6 +199,11 @@
       };
       scanner.onmessage = function (e) {
         var m = e.data;
+        if (typeof m.id === 'string') {   // sweep ids are strings, so they never collide with scan ids
+          if (!sweepCbs || m.id !== sweepId) return;
+          if (m.type === 'sweepRow') sweepCbs.onRow(m.row, m.done, m.total); else if (m.type === 'sweepDone' || m.type === 'error') sweepCbs.onDone();
+          return;
+        }
         if (!scanCbs || m.id !== scanId) return;
         if (m.type === 'scanCell') scanCbs.onCell(m.x, m.y, m.verdict, m.done, m.total);
         else if (m.type === 'scanDone' || m.type === 'error') scanCbs.onDone();
@@ -197,6 +225,12 @@
           scanCbs = { onCell: onCell, onDone: onDone };
           scanner.postMessage({ type: 'scan', id: my, params: pp, step: 6 });
           return function () { if (scanId === my) { scanCbs = null; scanner.postMessage({ type: 'cancelScan' }); } };
+        },
+        sweep: function (pp, onRow, onDone) {
+          var my = sweepId = 's' + (++sweepSeq);
+          sweepCbs = { onRow: onRow, onDone: onDone };
+          scanner.postMessage({ type: 'sweep', id: my, params: pp, step: 4 });
+          return function () { if (sweepId === my) { sweepCbs = null; scanner.postMessage({ type: 'cancelSweep' }); } };
         }
       };
     }).catch(function () { return mainBackend(); });
@@ -211,6 +245,7 @@
   var queued = null, running = false, jobSeq = 0, motorsSeq = 0, fullTimer = 0;
 
   function request(mode) {
+    if (UI.hoodError.active()) return;
     queued = { mode: mode, params: params(), seq: ++jobSeq };
     pump();
   }
@@ -238,51 +273,33 @@
     }, delay == null ? 150 : delay);
   }
   function requestMotors() {
-    if (!backend) return;
+    if (!backend || UI.hoodError.active()) return;
     var my = ++motorsSeq;
     backend.motors(params()).then(function (rows) { if (my === motorsSeq) renderMotors(rows); }).catch(function () {});
   }
-  function setBusy(on) { $('verdictPanel').classList.toggle('busy', !!on); }
+  function setBusy(on) { $('arcPanel').classList.toggle('busy', !!on); }
 
   function apply(r, p, mode) {
+    if (UI.hoodError.active()) return;   // a result that was in flight when the error state began
     current = r;
     currentParams = p;
-    renderVerdict(r);
-    renderArc(r, p);
+    renderResults(r, p);
     renderMotor(r, p);
     drawField();
     if (mode === 'full') { drawSide(); three.update(); if (mathDialog.open) renderMath(); }
+    UI.rpmPlot.update(backend, p, r, mode);
+  }
+  function renderResults(r, p) {
+    if (!UI.hoodError.active()) { UI.results.renderBadge(r); UI.results.renderArc(r, p); UI.results.renderReference(r); }
   }
 
-  // ------------------------------------------------------------------ verdict + readouts
-  function renderVerdict(r) {
-    var cls = VCLASS[r.verdict] || 'bad';
-    var badge = $('verdictBadge');
-    badge.className = 'verdict-badge v-' + cls;
-    badge.innerHTML = ICON[cls];
-    badge.appendChild(document.createTextNode(r.verdict));
-    var rate = Math.floor(r.hitRate * 100 + 1e-9);
-    $('hitRate').textContent = rate + '%';
-    var fill = $('rateFill');
-    fill.style.width = clamp(r.hitRate * 100, 0, 100) + '%';
-    fill.style.background = P[cls + '-mark'];
-    $('reason').textContent = L10n(r.reason);
-    var box = $('warnings');
-    box.replaceChildren();
-    (r.warnings || []).forEach(function (w) {
-      var c = document.createElement('span');
-      c.className = 'chip';
-      c.innerHTML = ICON.alert;
-      c.appendChild(document.createTextNode(L10n(w.text)));
-      box.appendChild(c);
-    });
-  }
-
+  // ------------------------------------------------------------------ readouts
   function fillKV(dl, items) {
     dl.replaceChildren();
     items.forEach(function (it) {
       var d = document.createElement('div');
       if (it.wide) d.className = 'wide';
+      if (it.error) d.classList.add('err');
       var dt = document.createElement('dt');
       dt.textContent = it.label;
       var dd = document.createElement('dd');
@@ -296,41 +313,6 @@
       d.appendChild(dd);
       dl.appendChild(d);
     });
-  }
-
-  function aimWords(off) {
-    if (Math.abs(off) < 0.05) return 'straight at the mouth center';
-    return nf(Math.abs(off), 1) + '° ' + (off > 0 ? 'left' : 'right') + ' of the mouth center';
-  }
-
-  function renderArc(r) {
-    var b = r.best, dl = $('arcReadout');
-    if (!b) {
-      var cm = r.closestMiss;
-      fillKV(dl, [
-        { label: 'Launch angle', value: '—' }, { label: 'Exit speed', value: '—' },
-        { label: 'Closest try', value: cm ? nf(cm.thetaDeg, 0) + '° · ' + fmtSpeed(cm.v) : '—', small: cm && cm.cause ? 'misses: ' + causeWord(cm.cause) : '', wide: true }
-      ]);
-      return;
-    }
-    var w = b.windows, note = b.reachable === false ? ' (needed; motor can\'t reach it)' : '';
-    fillKV(dl, [
-      { label: 'Launch angle', value: nf(b.thetaDeg, 1) + '°', small: nf(90 - b.thetaDeg, 1) + '° off vertical' },
-      { label: 'Exit speed' + note, value: fmtSpeed(b.v), small: U.getSystem() === 'metric' ? U.fmtSpeed(b.v, 1, 'imperial') : U.fmtSpeed(b.v, 2, 'metric') },
-      { label: 'Aim', value: nf(b.yawOffsetDeg, 1) + '°', small: aimWords(b.yawOffsetDeg) },
-      { label: 'Point the mouth', value: nf(U.headingToUser(b.yawDeg), 1) + '°', small: 'heading from your +x axis toward +y' },
-      { label: 'Apex', value: fmtLen(b.apexIn, 0), small: (U.getSystem() === 'metric' ? nf(b.apexIn * 0.0254, 2) + ' m' : nf(b.apexIn / 12, 1) + ' ft') + ' above the tiles' },
-      { label: 'Time to CELL', value: b.tToCell != null ? nf(b.tToCell, 2) + ' s' : '—', small: b.entrySpeed != null ? 'enters at ' + fmtSpeed(b.entrySpeed, 1) : '' },
-      { label: 'Distance', value: fmtLen(r.distIn, 0), small: 'shooter mouth to CELL mouth center, flat' },
-      { label: 'Scoring window', wide: true,
-        value: nf(w.thetaDeg[0], 1) + '–' + nf(w.thetaDeg[1], 1) + '° · ' + nf(U.toSpeed(w.v[0]), 2) + '–' + fmtSpeed(w.v[1], 2),
-        small: 'aim ' + nf(w.yawDeg[0] - b.yawDeg, 1) + '° to +' + nf(w.yawDeg[1] - b.yawDeg, 1) + '° · each range holds the other two at the best value' }
-    ]);
-  }
-
-  function causeWord(c) {
-    return ({ short: 'falls short', long: 'flies past', lip: 'clips the bottom lip', roof: 'hits the CELL rim or roof', cell: 'hits another CELL',
-      frame: 'hits the HIVE frame or arm', wall: 'hits the wall', floor: 'hits the floor' })[c] || c;
   }
 
   function renderMotor(r, p) {
@@ -698,7 +680,7 @@
   // heat map
   function heatParamsKey(p) { var q = Object.assign({}, p, { mouth: { height: p.mouth.height } }); return JSON.stringify(q); }
   function startScan() {
-    if (!backend) return;
+    if (!backend || UI.hoodError.active()) return;
     var p = params(), key = heatParamsKey(p);
     if (key === heatKey && heatStop === null && heatCount > 0) return; // finished for these settings
     if (heatStop) heatStop();
@@ -836,7 +818,7 @@
     c.textAlign = 'left';
     c.textBaseline = 'top';
     c.fillText(U.lenUnit() + ' · along the shot from the mouth', m.l, 4);
-    $('viewsCaption').textContent = r.best ? 'Launch ' + nf(r.best.thetaDeg, 1) + '° at ' + fmtSpeed(r.best.v) + ' from ' + fmtLen(p.h0, 0) + ' up. Side view and 3-D view are to scale.' : 'No clean arc from this spot — the red line is the closest try.';
+    if (!UI.hoodError.active()) $('viewsCaption').textContent = r.best ? 'Launch ' + nf(r.best.thetaDeg, 1) + '° at ' + fmtSpeed(r.best.v) + ' from ' + fmtLen(p.h0, 0) + ' up. Side view and 3-D view are to scale.' : 'No clean arc from this spot — the red line is the closest try.';
   }
 
   // ------------------------------------------------------------------ 3-D view
@@ -1089,6 +1071,7 @@
     var pr = SH.precision[state.precision];
     $('precHelp').textContent = 'Each shot is off by about ±' + pr.sigThetaDeg + '° in angle, ±' + pr.sigYawDeg + '° in aim and ±' + nf(pr.sigShooter * 100, 1) + '% in speed.';
     $('tipLabel').textContent = 'TIP ' + state.target + ' HIVE';
+    UI.panels.setAlliance(state.target);
   }
 
   function syncMouthInputs() {
@@ -1107,9 +1090,23 @@
     syncControls();
     if (opts && opts.hive) { hiveCache.key = ''; three.rebuild(); }
     drawField();
+    if (hoodGate()) return;
     request('coarse');
     requestFull();
   }
+  // fixed hood without a valid angle: error state on every calculated field, no engine work (design #2 section 5.9)
+  function hoodGate() {
+    var err = UI.hood.validate(state.hood);
+    if (!err) { UI.hoodError.hide(); return false; }
+    clearTimeout(fullTimer);
+    queued = null;
+    motorsSeq++;   // a motors table answer still in flight must not overwrite the error cells
+    if (heatStop) { heatStop(); heatStop = null; heatKey = ''; }
+    UI.rpmPlot.cancel();
+    UI.hoodError.show(err, function () { UI.panels.openRobotConfig('hoodAngle'); });
+    return true;
+  }
+  UI.hood.mount($('hoodHost'), function () { return state.hood; }, function (cfg) { state.hood = cfg; UI.hood.save(cfg); changed(); });
 
   document.querySelectorAll('.seg[data-key]').forEach(function (seg) {
     seg.addEventListener('click', function (e) {
@@ -1150,9 +1147,11 @@
     state.units = U.setSystem(u);
     saveUnits(state.units);
     syncControls();
-    if (current) { renderVerdict(current); renderArc(current, currentParams); renderMotor(current, currentParams); }
+    var showing = !UI.hoodError.active();   // in the error state the calculated fields keep their error
+    if (current && showing) { renderResults(current, currentParams); renderMotor(current, currentParams); }
+    UI.rpmPlot.redraw();
     drawField(); drawSide();
-    if (lastMotorRows) renderMotors(lastMotorRows);
+    if (lastMotorRows && showing) renderMotors(lastMotorRows);
     if (mathDialog.open) renderMath();
   }
   ['mx', 'my'].forEach(function (id) {
@@ -1168,7 +1167,7 @@
     state.origin = U.setCorner(this.value);
     saveOrigin(state.origin);
     syncControls();
-    if (current) renderArc(current, currentParams);
+    if (current) renderResults(current, currentParams);
     drawField();
     if (mathDialog.open) renderMath();
   });
@@ -1234,7 +1233,7 @@
         eq(s1, 'Exit efficiency', 'v_exit = η × (v_bottom + v_top) ÷ 2,  v_top = k × v_bottom', 'η ' + f(dt.etaDual, 2) + ', k ' + f(dt.topRatio, 2) + ' → v_exit = ' + f(dt.exitFactor, 3) + ' × v_bottom');
         eq(s1, 'Bottom wheel surface speed', 'v_bottom = v_exit ÷ (η(1 + k) ÷ 2)', f(v, 2) + ' ÷ ' + f(dt.exitFactor, 3), f(dt.vWheel, 2) + ' m/s');
       } else {
-        eq(s1, 'Exit efficiency', 'η = ball exit speed ÷ wheel surface speed', 'set under Advanced (a perfect hood = 0.50)', 'η = ' + f(dt.etaSingle, 2));
+        eq(s1, 'Exit efficiency', 'η = ball exit speed ÷ wheel surface speed', 'set in Robot config (a perfect hood = 0.50)', 'η = ' + f(dt.etaSingle, 2));
         eq(s1, 'Wheel surface speed', 'v_wheel = v_exit ÷ η', f(v, 2) + ' ÷ ' + f(dt.exitFactor, 2), f(dt.vWheel, 2) + ' m/s');
       }
       eq(s1, 'Wheel rpm', 'n_wheel = 60 × v_wheel ÷ (π × D)', '60 × ' + f(dt.vWheel, 2) + ' ÷ (π × ' + f(dt.wheelDiameterM, 3) + ' m)', f(m.wheelRpm, 0) + ' rpm');
@@ -1314,8 +1313,8 @@
     eq(s6, 'Aim scatter (' + pr.label + ')', 'σ_angle, σ_aim', '', '±' + f(sg.thetaDeg, 1) + '° angle, ±' + f(sg.yawDeg, 1) + '° aim');
     if (sg.v != null) eq(s6, 'Speed scatter', 'σ_v = √(σ_shots² + σ_motor² + σ_recovery²)', '√(' + pct(sg.shooter, 2) + '² + ' + pct(sg.motor, 2) + '² + ' + pct(sg.recovery, 2) + '²)', '±' + pct(sg.v, 2));
     if (b) {
-      var wn = b.windows;
-      eq(s6, 'Scoring window at the best aim', 'range that still scores, others held at best', f(wn.thetaDeg[0], 1) + '–' + f(wn.thetaDeg[1], 1) + '° · ' + f(U.toSpeed(wn.v[0]), 2) + '–' + fmtSpeed(wn.v[1], 2));
+      var wn = b.scoringWindow || b.windows;   // rectangular opening when the engine provides it (#3)
+      eq(s6, 'Scoring window at the best aim' + (b.scoringWindow ? ' (rectangular opening)' : ''), 'range that still scores, others held at best', f(wn.thetaDeg[0], 1) + '–' + f(wn.thetaDeg[1], 1) + '° · ' + f(U.toSpeed(wn.v[0]), 2) + '–' + fmtSpeed(wn.v[1], 2));
     }
     eq(s6, 'Hit rate', 'share of scattered shots that score', '', pct(r.hitRate, 0));
     eq(s6, 'Verdict', '≥ 80% (and PID under 92% speed) → POSSIBLE · 40–80% → NOT CONSISTENT · under 40%, no arc, or too slow → WON’T WORK', '', r.verdict);
@@ -1329,7 +1328,7 @@
   mathDialog.addEventListener('click', function (e) { if (e.target === mathDialog && mathDialog.close) mathDialog.close(); });
 
   // ------------------------------------------------------------------ theme + resize
-  function themeChanged() { readPalette(); drawField(); drawSide(); three.rebuild(); if (current) renderVerdict(current); }
+  function themeChanged() { readPalette(); drawField(); drawSide(); three.rebuild(); UI.rpmPlot.redraw(); }
   if (window.matchMedia) {
     var mq = window.matchMedia('(prefers-color-scheme: dark)');
     if (mq.addEventListener) mq.addEventListener('change', themeChanged); else if (mq.addListener) mq.addListener(themeChanged);
@@ -1350,6 +1349,7 @@
   drawField();
   three.resize();
   three.rebuild();
+  hoodGate();
   makeBackend().then(function (b) {
     backend = b;
     $('engineState').textContent = 'Engine: ' + b.kind;

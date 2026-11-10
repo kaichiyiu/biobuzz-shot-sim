@@ -91,12 +91,20 @@
   function wrap360(d) { d = d % 360; if (d < 0) d += 360; return d >= 360 - 1e-9 ? 0 : d; }
   // headings (deg): engine CCW-from-+x <-> user frame (0 = user +x, positive toward user +y), 0..360
   function headingToUser(deg, c) { var k = cr(c), a = deg * Math.PI / 180; return wrap360(Math.atan2(-k.fy * Math.sin(a), -k.fx * Math.cos(a)) * 180 / Math.PI); }
+  // An engine heading range (lo -> hi, counter-clockwise) in the user frame: ordered counter-clockwise, 0..360.
+  // Corners whose map mirrors the field (fx * fy < 0) swap the ends; wraps = the range crosses 0 / 360 (to < from).
+  function headingRangeToUser(lo, hi, c) {
+    var k = cr(c), width = hi - lo;
+    var from = headingToUser(k.fx * k.fy < 0 ? hi : lo, c), to = from + width, wraps = to > 360 + 1e-9;
+    if (wraps) to -= 360;
+    return { from: from, to: to, wraps: wraps };
+  }
   function headingToField(deg, c) { return headingToUser(deg, c); }   // the map is its own inverse
 
   return {
     CORNERS: CORNERS, DEFAULT_CORNER: DEFAULT_CORNER, normCorner: normCorner, setCorner: setCorner, getCorner: getCorner,
     setFieldHalf: setFieldHalf, fieldToUser: fieldToUser, userToField: userToField,
-    fieldToDisplay: fieldToDisplay, displayToField: displayToField, headingToUser: headingToUser, headingToField: headingToField,
+    fieldToDisplay: fieldToDisplay, displayToField: displayToField, headingToUser: headingToUser, headingToField: headingToField, headingRangeToUser: headingRangeToUser,
     SYSTEMS: SYSTEMS, setSystem: setSystem, getSystem: getSystem, normalize: normalize,
     lenUnit: function (u) { return sys(u).len; }, speedUnit: function (u) { return sys(u).speed; }, massUnit: function (u) { return sys(u).mass; },
     lenStep: function (u) { return sys(u).lenStep; },

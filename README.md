@@ -19,7 +19,11 @@ A shot simulator for the **FTC 2026–27 game BIOBUZZ**. Drag your shooter mouth
 - **Metric / imperial toggle** ([#16](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/16)): in, ft/s, oz or cm, m/s, g. Saved between visits; `?units=` in the URL overrides it.
 - **Shooter mouth placed directly in field coordinates** ([#1](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/1)): pick which corner is (0,0) (`?origin=`). The sim reports the heading to point the mouth.
 
-Planned work is tracked in [Issues](https://github.com/kaichiyiu/biobuzz-shot-sim/issues), e.g. the results-panel redesign (#18), lookup-table export (#4), calibration (#11) and the field heatmap (#15).
+- **New results panel** ([#18](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/18)): Robot config (folded) · Current shot · Required arc (verdict badge, mouth yaw, launch angle, launch speed + rpm, scoring window) · Motor & flywheel · Reference data (folded).
+- **Rectangular scoring window** ([#3](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/3)): the yaw / angle / speed ranges assume the parallel-sided part of the CELL mouth, so they mean the same thing at every yaw. The hit rate still uses the real pentagon.
+- **Hood setting** ([#2](https://github.com/kaichiyiu/biobuzz-shot-sim/issues/2)): *Adjustable* (default 45–80°) picks the angle with the widest RPM window; *Fixed* uses the launch angle you enter and plots min / max RPM against distance. The advised aim is the centre of the scoring window (the ranges that score when everything goes as set); hit rate and verdict are a what-if for your precision setting. Shows how the window shrinks for a ±1° angle error.
+
+Planned work is tracked in [Issues](https://github.com/kaichiyiu/biobuzz-shot-sim/issues), e.g. lookup-table export (#4), calibration (#11) and the field heatmap (#15).
 
 ## Features
 
@@ -76,10 +80,14 @@ data/motors.json        goBILDA 5203 Yellow Jacket specs (11 ratios)
 data/field.json         field, HIVE, CELL and frame geometry
 data/shooter.json       wheels, flywheel presets, model constants, precision presets
 src/engine.js           physics, hit test, search, motor model, verdicts (no DOM; works in Node, a worker or the page)
+src/engine-rect.js      rectangular scoring window (#3)
+src/engine-hood*.js     hood modes, widest-window angle, centred aim (#2)
+src/engine-sweep.js     RPM-vs-distance sweep points
 src/worker.js           Web Worker wrapper
 src/units.js            display units (metric / imperial) format + parse layer
 src/app.js              UI: field, side view, 3-D view (three.js r128), readouts, motor table
-src/styles.css, src/markup.html
+src/ui-*.js             results panel, scoring window, hood controls + error state, RPM plot
+src/styles.css, src/panel.css, src/markup.html
 tools/build.mjs         builds dist/biobuzz-shot-sim.html (single file), dist/preview.html and docs/index.html (GitHub Pages)
 tests/                  node tests, Python oracle and cross-check
 SPEC.md                 full build spec, including decisions made after research

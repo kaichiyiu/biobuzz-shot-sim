@@ -47,31 +47,139 @@
       </div>
     </section>
 
-    <aside class="side">
-      <section class="verdict panel" id="verdictPanel" aria-live="polite" aria-atomic="true">
-        <div class="verdict-top">
-          <span class="verdict-badge v-warn" id="verdictBadge">Working…</span>
-          <div class="hit-big"><span class="num" id="hitRate">—</span><span class="label">shots that score</span></div>
+    <aside class="side" id="sideCol" data-target="red">
+      <details class="panel fold" id="robotConfig">
+        <summary><h2>Robot config</h2><span class="fold-hint">values you set once</span></summary>
+        <div class="controls">
+          <fieldset>
+            <legend>Ball</legend>
+            <div class="seg" role="group" aria-labelledby="ball-l" data-key="ballId">
+              <button type="button" data-v="pollen">Pollen · <span id="pollenSize">2.8 in</span></button><button type="button" data-v="nectar">Nectar · <span id="nectarSize">3.6 in</span></button>
+            </div>
+            <span class="sr-only" id="ball-l">Ball</span>
+          </fieldset>
+
+          <fieldset>
+            <legend>Shooter mouth</legend>
+            <label class="ctl"><span class="label">Mouth height above tiles <output id="h0Out"></output></span>
+              <input type="range" id="h0" min="4" max="29" step="1"></label>
+            <div id="hoodHost"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Motor &amp; flywheel</legend>
+            <label class="ctl"><span class="label">goBILDA Yellow Jacket motor (8 mm REX)</span>
+              <select id="motor"></select></label>
+            <div class="ctl-row">
+              <div class="ctl"><span class="label" id="mpw-l">Motors per wheel</span>
+                <div class="seg" role="group" aria-labelledby="mpw-l" data-key="motorsPerWheel">
+                  <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button>
+                </div>
+              </div>
+              <label class="ctl"><span class="label">Gearing (wheel : motor)</span>
+                <select id="gear">
+                  <option value="0.5">1 : 2 (down)</option><option value="0.75">1 : 1.33 (down)</option><option value="1">1 : 1 direct</option>
+                  <option value="1.25">1.25 : 1 (up)</option><option value="1.5">1.5 : 1 (up)</option><option value="2">2 : 1 (up)</option>
+                  <option value="3">3 : 1 (up)</option><option value="4">4 : 1 (up)</option><option value="5">5 : 1 (up)</option>
+                </select></label>
+            </div>
+            <div class="ctl"><span class="label" id="type-l">Shooter type</span>
+              <div class="seg" role="group" aria-labelledby="type-l" data-key="type">
+                <button type="button" data-v="single">1 wheel + hood</button><button type="button" data-v="dual">Top + bottom wheels</button>
+              </div>
+            </div>
+            <label class="ctl" id="topRatioCtl" hidden><span class="label">Top wheel speed <output id="topOut"></output></span>
+              <input type="range" id="topRatio" min="0" max="1" step="0.05">
+              <span class="help">Bottom wheel is the fast one. Slower top wheel = more backspin; 100% = no spin.</span></label>
+            <label class="ctl"><span class="label">Wheel</span><select id="wheel"></select></label>
+            <div class="ctl-row">
+              <label class="ctl"><span class="label">Wheels per shaft</span>
+                <select id="wheelCount"><option value="1">1 wheel</option><option value="2">2 wheels</option><option value="3">3 wheels</option><option value="4">4 wheels</option></select></label>
+              <label class="ctl"><span class="label">Extra flywheel</span><select id="addOn"></select></label>
+            </div>
+            <p class="help" id="inertiaHelp"></p>
+            <label class="ctl"><span class="label">Exit efficiency η <output id="etaOut"></output></span>
+              <input type="range" id="eta" step="0.01">
+              <span class="help">Ball exit speed ÷ <span id="etaWhat">wheel surface speed</span>.</span>
+              <span class="help" id="etaHelp">A hooded shooter ideally launches at half the wheel's surface speed. Measured shooters land around 0.30–0.45, so lower this if your real shots come out slow.</span></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Robot assumptions</legend>
+            <div class="ctl"><span class="label" id="prec-l">Robot precision</span>
+              <div class="seg" role="group" aria-labelledby="prec-l" data-key="precision">
+                <button type="button" data-v="dialed">Dialed-in</button><button type="button" data-v="typical">Typical</button><button type="button" data-v="rough">Rough</button>
+              </div>
+              <span class="help" id="precHelp"></span>
+            </div>
+            <div class="ctl"><span class="label" id="ctrl-l">Speed control</span>
+              <div class="seg" role="group" aria-labelledby="ctrl-l" data-key="control">
+                <button type="button" data-v="pid">PID velocity</button><button type="button" data-v="power">Fixed power (no PID)</button>
+              </div>
+            </div>
+            <label class="ctl"><span class="label">Battery voltage under load <output id="battOut"></output></span>
+              <input type="range" id="battery" min="11" max="13.5" step="0.1">
+              <span class="help" id="battHelp">Motor top speed scales with voltage. 12.0 V is the rated value and a safe end-of-match number; a fresh battery holds about 13 V.</span></label>
+            <label class="ctl"><span class="label">Time between shots <output id="intervalOut"></output></span>
+              <input type="range" id="interval" min="0.2" max="2" step="0.05"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Origin</legend>
+            <label class="ctl"><span class="label">Origin (0, 0) corner</span>
+              <select id="origin">
+                <option value="red-audience">Red alliance · audience side</option>
+                <option value="blue-audience">Blue alliance · audience side</option>
+                <option value="red-far">Red alliance · far side</option>
+                <option value="blue-far">Blue alliance · far side</option>
+              </select></label>
+            <p class="help" id="originHelp"></p>
+            <p class="help">The aim is solved freely (turret-style); the readout gives the heading to point the mouth.</p>
+          </fieldset>
         </div>
-        <div>
-          <div class="rate-bar"><div class="rate-fill" id="rateFill" style="width:0"></div></div>
-          <div class="rate-ticks" aria-hidden="true"><span style="left:0;transform:none">0</span><span style="left:40%">40%</span><span style="left:80%">80%</span><span style="left:100%;transform:translateX(-100%)">100%</span></div>
+      </details>
+
+      <section class="panel readout" id="currentShot" aria-labelledby="shot-h">
+        <h2 class="ally" id="shot-h">Current shot</h2>
+        <div class="shot-rows">
+          <div class="shot-row"><span class="label ally" id="target-l">Alliance</span>
+            <div class="seg" role="group" aria-labelledby="target-l" data-key="target">
+              <button type="button" data-v="red"><i class="dot" style="background:var(--red)"></i>Red</button><button type="button" data-v="blue"><i class="dot" style="background:var(--blue)"></i>Blue</button>
+            </div>
+          </div>
+          <div class="shot-row"><span class="label" id="up-l">Cell</span>
+            <div class="seg" role="group" aria-labelledby="up-l" data-key="upSide">
+              <button type="button" data-v="-1">Audience</button><button type="button" data-v="1">Scoring</button>
+            </div>
+          </div>
+          <div class="shot-row"><span class="label" id="mxy-l">Mouth x, y</span>
+            <div class="xy" role="group" aria-labelledby="mxy-l">
+              <input type="number" id="mx" step="0.5" aria-label="Mouth x"><input type="number" id="my" step="0.5" aria-label="Mouth y"><span class="unit u-len">in</span>
+            </div>
+          </div>
         </div>
-        <p class="reason" id="reason">Calculating the best arc…</p>
-        <div class="chips" id="warnings"></div>
+      </section>
+
+      <section class="panel readout" id="arcPanel" aria-labelledby="arc-h">
+        <div class="arc-head" aria-live="polite" aria-atomic="true">
+          <div class="title-bar"><h2 class="ally" id="arc-h">Required arc</h2><span class="verdict-badge" id="verdictBadge" hidden></span></div>
+          <p class="reason" id="reason">Calculating the best arc…</p>
+          <div class="chips" id="warnings"></div>
+        </div>
+        <dl class="kv rows" id="arcReadout"></dl>
+        <div class="win-block" id="windowBlock" hidden>
+          <h3 class="sub-h">Scoring window</h3>
+          <p class="info-note" id="windowNote"></p>
+          <dl class="kv rows" id="windowReadout"></dl>
+        </div>
         <button type="button" class="btn math-btn" id="mathBtn" aria-haspopup="dialog">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h11M2.5 13h11M5 5.5 11 8 5 10.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Show the math
         </button>
       </section>
 
-      <section class="readout panel" aria-labelledby="arc-h">
-        <h2 id="arc-h">Required arc</h2>
-        <dl class="kv" id="arcReadout"></dl>
-      </section>
-
-      <section class="readout panel" aria-labelledby="motor-h">
-        <h2 id="motor-h">Motor &amp; flywheel</h2>
+      <section class="readout panel" id="motorPanel" aria-labelledby="motor-h">
+        <h2 class="ally" id="motor-h">Motor &amp; flywheel</h2>
         <dl class="kv" id="motorReadout"></dl>
         <div class="meter" id="headroomMeter">
           <div class="label" style="margin-bottom:5px">Motor speed used</div>
@@ -80,101 +188,10 @@
         </div>
       </section>
 
-      <section class="controls panel" aria-label="Settings">
-        <fieldset>
-          <legend>Shot</legend>
-          <div class="ctl"><span class="label" id="ball-l">Ball</span>
-            <div class="seg" role="group" aria-labelledby="ball-l" data-key="ballId">
-              <button type="button" data-v="pollen">Pollen · <span id="pollenSize">2.8 in</span></button><button type="button" data-v="nectar">Nectar · <span id="nectarSize">3.6 in</span></button>
-            </div>
-          </div>
-          <div class="ctl"><span class="label" id="target-l">Shooting into</span>
-            <div class="seg" role="group" aria-labelledby="target-l" data-key="target">
-              <button type="button" data-v="red"><i class="dot" style="background:var(--red)"></i>Red HIVE</button><button type="button" data-v="blue"><i class="dot" style="background:var(--blue)"></i>Blue HIVE</button>
-            </div>
-          </div>
-          <div class="ctl"><span class="label" id="up-l">That HIVE's upward CELL</span>
-            <div class="seg" role="group" aria-labelledby="up-l" data-key="upSide">
-              <button type="button" data-v="-1">Audience side</button><button type="button" data-v="1">Far side</button>
-            </div>
-          </div>
-          <label class="ctl"><span class="label">Shooter mouth height above tiles <output id="h0Out"></output></span>
-            <input type="range" id="h0" min="4" max="29" step="1"></label>
-          <div class="ctl-row">
-            <label class="ctl"><span class="label">Mouth x (<span class="u-len">in</span>)</span><input type="number" id="mx" step="0.5"></label>
-            <label class="ctl"><span class="label">Mouth y (<span class="u-len">in</span>)</span><input type="number" id="my" step="0.5"></label>
-          </div>
-          <label class="ctl"><span class="label">Origin (0, 0) corner</span>
-            <select id="origin">
-              <option value="red-audience">Red alliance · audience side</option>
-              <option value="blue-audience">Blue alliance · audience side</option>
-              <option value="red-far">Red alliance · far side</option>
-              <option value="blue-far">Blue alliance · far side</option>
-            </select></label>
-          <p class="help" id="originHelp"></p>
-          <p class="help">The aim is solved freely (turret-style); the readout gives the heading to point the mouth.</p>
-        </fieldset>
-
-        <fieldset>
-          <legend>Motor &amp; flywheel</legend>
-          <label class="ctl"><span class="label">goBILDA Yellow Jacket motor (8 mm REX)</span>
-            <select id="motor"></select></label>
-          <div class="ctl-row">
-            <div class="ctl"><span class="label" id="mpw-l">Motors per wheel</span>
-              <div class="seg" role="group" aria-labelledby="mpw-l" data-key="motorsPerWheel">
-                <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button>
-              </div>
-            </div>
-            <label class="ctl"><span class="label">Gearing (wheel : motor)</span>
-              <select id="gear">
-                <option value="0.5">1 : 2 (down)</option><option value="0.75">1 : 1.33 (down)</option><option value="1">1 : 1 direct</option>
-                <option value="1.25">1.25 : 1 (up)</option><option value="1.5">1.5 : 1 (up)</option><option value="2">2 : 1 (up)</option>
-                <option value="3">3 : 1 (up)</option><option value="4">4 : 1 (up)</option><option value="5">5 : 1 (up)</option>
-              </select></label>
-          </div>
-          <div class="ctl"><span class="label" id="type-l">Shooter type</span>
-            <div class="seg" role="group" aria-labelledby="type-l" data-key="type">
-              <button type="button" data-v="single">1 wheel + hood</button><button type="button" data-v="dual">Top + bottom wheels</button>
-            </div>
-          </div>
-          <label class="ctl" id="topRatioCtl" hidden><span class="label">Top wheel speed <output id="topOut"></output></span>
-            <input type="range" id="topRatio" min="0" max="1" step="0.05">
-            <span class="help">Bottom wheel is the fast one. Slower top wheel = more backspin; 100% = no spin.</span></label>
-          <label class="ctl"><span class="label">Wheel</span><select id="wheel"></select></label>
-          <div class="ctl-row">
-            <label class="ctl"><span class="label">Wheels per shaft</span>
-              <select id="wheelCount"><option value="1">1 wheel</option><option value="2">2 wheels</option><option value="3">3 wheels</option><option value="4">4 wheels</option></select></label>
-            <label class="ctl"><span class="label">Extra flywheel</span><select id="addOn"></select></label>
-          </div>
-          <p class="help" id="inertiaHelp"></p>
-          <div class="ctl"><span class="label" id="ctrl-l">Speed control</span>
-            <div class="seg" role="group" aria-labelledby="ctrl-l" data-key="control">
-              <button type="button" data-v="pid">PID velocity</button><button type="button" data-v="power">Fixed power (no PID)</button>
-            </div>
-          </div>
-          <label class="ctl"><span class="label">Battery voltage under load <output id="battOut"></output></span>
-            <input type="range" id="battery" min="11" max="13.5" step="0.1">
-            <span class="help" id="battHelp">Motor top speed scales with voltage. 12.0 V is the rated value and a safe end-of-match number; a fresh battery holds about 13 V.</span></label>
-          <label class="ctl"><span class="label">Time between shots <output id="intervalOut"></output></span>
-            <input type="range" id="interval" min="0.2" max="2" step="0.05"></label>
-          <details class="adv">
-            <summary>Advanced: exit efficiency</summary>
-            <label class="ctl"><span class="label">Ball exit speed ÷ <span id="etaWhat">wheel surface speed</span> <output id="etaOut"></output></span>
-              <input type="range" id="eta" step="0.01"></label>
-            <p class="help" id="etaHelp">A hooded shooter ideally launches at half the wheel's surface speed. Measured shooters land around 0.30–0.45, so lower this if your real shots come out slow.</p>
-          </details>
-        </fieldset>
-
-        <fieldset>
-          <legend>Robot</legend>
-          <div class="ctl"><span class="label" id="prec-l">Robot precision</span>
-            <div class="seg" role="group" aria-labelledby="prec-l" data-key="precision">
-              <button type="button" data-v="dialed">Dialed-in</button><button type="button" data-v="typical">Typical</button><button type="button" data-v="rough">Rough</button>
-            </div>
-            <span class="help" id="precHelp"></span>
-          </div>
-        </fieldset>
-      </section>
+      <details class="panel fold" id="refData">
+        <summary><h2>Reference data</h2><span class="fold-hint">angle, distance, apex, time</span></summary>
+        <div class="fold-body"><dl class="kv rows" id="refReadout"></dl></div>
+      </details>
     </aside>
 
     <section class="views panel" aria-labelledby="views-h">
@@ -187,6 +204,10 @@
         <div class="view">
           <div class="view-head"><h3>3-D view</h3><span class="help">Drag to orbit · scroll or pinch to zoom</span></div>
           <div class="three-host" id="threeHost" aria-label="3-D view of the field, HIVE and ball path"><span class="three-note" id="threeNote"></span></div>
+        </div>
+        <div class="view rpm-card" id="rpmCard" hidden>
+          <div class="view-head"><h3>RPM vs distance</h3><span class="help" id="rpmNote">Fixed hood: motor rpm that scores, along the line from here to the CELL.</span></div>
+          <svg id="rpmPlot" viewBox="0 0 640 250" role="img" aria-label="Motor rpm window against distance to the CELL"></svg>
         </div>
       </div>
     </section>
@@ -225,7 +246,7 @@
               <li>All eleven goBILDA 5203 Yellow Jacket motors (8 mm REX shaft). The 5204 versions with the 80 mm REX shaft have the same specs.</li>
               <li>Usable free speed is 97% of the listed rpm (goBILDA tests the 1:1 motor at 5,800 of 6,000 rpm).</li>
               <li>Each shot drains about twice the ball's energy from the flywheel; recovery follows the motor's torque–speed line at full power.</li>
-              <li>Wheel inertia values are estimates (±25%); exit efficiency is adjustable under Advanced.</li>
+              <li>Wheel inertia values are estimates (±25%); exit efficiency is adjustable in Robot config.</li>
             </ul>
             <p class="help">Unofficial student tool. Not affiliated with FIRST, goBILDA or AndyMark.</p>
           </div>
