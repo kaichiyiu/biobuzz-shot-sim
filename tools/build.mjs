@@ -20,7 +20,7 @@ const units = rd('src', 'units.js');
 const app = rd('src', 'app.js');
 const css = rd('src', 'styles.css') + '\n' + rd('src', 'panel.css') + '\n' + rd('src', 'ext.css');
 // UI modules (window.ShotUI.*): after units.js, before app.js
-const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js'];
+const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js', 'ui-spin.js'];
 const markup = rd('src', 'markup.html');
 
 // Inline scripts must never contain a closing script tag.
