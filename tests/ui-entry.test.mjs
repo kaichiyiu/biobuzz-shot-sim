@@ -43,18 +43,24 @@ test('toParams: the speed limit only travels with maxSpeed', () => {
 
 test('rows: speed in display units, descending / rising words, dashes without a best shot', () => {
   U.setSystem('metric');
-  let r = S.rows({ entryAngleDeg: -30.34, entrySpeed: 5.5 }, { rule: 'any' }, U, nf);
+  let r = S.rows({ best: { entryAngleDeg: -30.34, entrySpeed: 5.5 } }, { rule: 'any' }, U, nf);
   assert.deepEqual(r.map((x) => x.label), ['Entry speed', 'Entry direction']);
   assert.equal(r[0].value, '5.5 m/s');
   assert.equal(r[1].value, 'Descending 30.3°');
-  r = S.rows({ entryAngleDeg: 13.4, entrySpeed: 5.5 }, { rule: 'maxSpeed', maxSpeedMps: 6 }, U, nf);
+  r = S.rows({ best: { entryAngleDeg: 13.4, entrySpeed: 5.5 } }, { rule: 'maxSpeed', maxSpeedMps: 6 }, U, nf);
   assert.equal(r[1].value, 'Rising 13.4°');
   assert.match(r[0].small, /at most 6\.0 m\/s/);
   U.setSystem('imperial');
-  assert.match(S.rows({ entryAngleDeg: 1, entrySpeed: 5.5 }, { rule: 'any' }, U, nf)[0].value, /ft\/s$/);
+  assert.match(S.rows({ best: { entryAngleDeg: 1, entrySpeed: 5.5 } }, { rule: 'any' }, U, nf)[0].value, /ft\/s$/);
   r = S.rows(null, { rule: 'descending' }, U, nf);
   assert.deepEqual(r.map((x) => x.value), ['—', '—']);
-  assert.equal(S.rows({ entryAngleDeg: null, entrySpeed: null }, {}, U, nf)[1].value, '—');
+  U.setSystem('metric');
+  // res.entry.best wins (rule-aware); res.best without an angle falls back to it
+  r = S.rows({ best: { entrySpeed: 9 }, entry: { best: { angleDeg: -12.5, speedMps: 4 } } }, { rule: 'any' }, U, nf);
+  assert.deepEqual(r.map((x) => x.value), ['4.0 m/s', 'Descending 12.5°']);
+  r = S.rows({ best: { entrySpeed: 9 }, entry: { best: null } }, { rule: 'any' }, U, nf);
+  assert.equal(r[0].value, '9.0 m/s'); assert.equal(r[1].value, '—');
+  assert.equal(S.rows({ best: { entryAngleDeg: null, entrySpeed: null } }, {}, U, nf)[1].value, '—');
 });
 
 // ---- fake DOM
@@ -90,7 +96,7 @@ function browser(stored) {
   return { win, hook, host, dl, st, recalcs: () => recalcs };
 }
 const legacy = (dl) => { dl.replaceChildren(fakeEl('div'), fakeEl('div')); };   // what the legacy renderReference leaves behind
-const R = { best: { entryAngleDeg: -20, entrySpeed: 5 } };
+const R = { best: { entryAngleDeg: -20, entrySpeed: 5 }, entry: { best: { angleDeg: -20, speedMps: 5 } } };
 
 test('onResult appends exactly two rows after the legacy rows, once, across repeated renders', () => {
   const b = browser();

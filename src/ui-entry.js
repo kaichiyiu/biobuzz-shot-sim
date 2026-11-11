@@ -35,10 +35,14 @@
     return n.rule === 'maxSpeed' ? { rule: 'maxSpeed', maxSpeedMps: n.maxSpeedMps } : { rule: n.rule };
   }
 
-  // Reference-data rows for the best shot; u = ShotUnits, nf(n, digits) = number formatter
-  function rows(best, rule, u, nf) {
-    var a = best && typeof best.entryAngleDeg === 'number' && isFinite(best.entryAngleDeg) ? best.entryAngleDeg : null;
-    var s = best && typeof best.entrySpeed === 'number' && isFinite(best.entrySpeed) ? best.entrySpeed : null;
+  function fin(x) { return typeof x === 'number' && isFinite(x) ? x : null; }
+  // Reference-data rows for a result r; u = ShotUnits, nf(n, digits) = number formatter.
+  // Source: res.entry.best (the cell the scoring window sits on, rule-aware), else res.best (the engine gives it no angle today).
+  function rows(r0, rule, u, nf) {
+    var e = r0 && r0.entry && r0.entry.best, b = r0 && r0.best;
+    var a = fin(e && e.angleDeg), s = fin(e && e.speedMps);
+    if (a == null) a = fin(b && b.entryAngleDeg);
+    if (s == null) s = fin(b && b.entrySpeed);
     var r = norm(rule), note = r.rule === 'descending' ? 'rule: descending only' : r.rule === 'maxSpeed' ? 'rule: at most ' + u.fmtSpeed(r.maxSpeedMps, 1) : '';
     return [
       { label: 'Entry speed', value: s == null ? '—' : u.fmtSpeed(s, 1), small: note && r.rule === 'maxSpeed' ? note : '' },
@@ -114,7 +118,7 @@
   function place() {
     if (!dl || !last || dl.querySelector('.err')) return;
     if (dl.querySelector('[data-entry]')) return;
-    appendRows(dl, rows(last.best, cur, ctx.units, ctx.fmt.nf));
+    appendRows(dl, rows(last, cur, ctx.units, ctx.fmt.nf));
   }
   root.ShotUI = root.ShotUI || {};
   root.ShotUI.entry = api;
