@@ -68,6 +68,7 @@
 
   function angleFor(c, dRobotIn) {
     var h = c.hood;
+    if (!fin(dRobotIn)) return NaN;
     if (h.mode === 'fixed') return h.angleDeg;
     var t = h.table, n = t.length, i;
     if (!n) return NaN;
