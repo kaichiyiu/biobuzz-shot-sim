@@ -1542,7 +1542,7 @@
     // heading to point the mouth (engine frame, deg CCW from +x): the best arc's yaw, else the line to the CELL
     res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
     if (hx) res.hood = hx.result(v || view, sel, res, hn, mode, { mo: mo, sh: sh, bp: bp });
-    if (en) res.entry = EXT.entry.result(v || view, sel, p, en);
+    if (en) res.entry = EXT.entry.result(v || view, sel, p, en, view);
     res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;

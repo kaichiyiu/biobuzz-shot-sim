@@ -38,7 +38,7 @@ test('without engine-entry loaded (bare engine) params.entry is ignored: no res.
 
 test('res.entry shape: { rule, kept, dropped, best: { angleDeg, speedMps } } and kept + dropped is the unfiltered count', () => {
   const left = SPOTS.left, a = E.evaluate({ ...left, entry: ANY }, 'full'), d = E.evaluate({ ...left, entry: DESC }, 'full');
-  assert.deepEqual(Object.keys(d.entry), ['rule', 'kept', 'dropped', 'best']);
+  assert.deepEqual(Object.keys(d.entry), ['rule', 'kept', 'dropped', 'best', 'coarse']);
   assert.deepEqual(d.entry.rule, DESC);
   assert.deepEqual(Object.keys(d.entry.best), ['angleDeg', 'speedMps']);
   assert.ok(d.entry.dropped > 0 && d.entry.kept > 0);

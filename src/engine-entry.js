@@ -9,8 +9,12 @@
  * filterView(view, rule) -> View              rule 'any' -> the SAME view object; else a shallow copy with a NEW rectHits (only the cells that
  *                                             pass) and `unfiltered` = the input view. Never mutates the input.
  * summary(before, after) -> { kept, dropped } rect-hit cell counts
- * result(view, sel, p, rule) -> res.entry     { rule, kept, dropped, best: { angleDeg, speedMps } | null }; best = entry data of the cell the
- *                                             scoring window is built on (the aim cell, else the nearest rect hit); `view` is the final view
+ * result(view, sel, p, rule, coarse) -> res.entry   { rule, kept, dropped, best: { angleDeg, speedMps } | null, coarse: { kept, dropped } };
+ *                                             best = entry data of the cell the scoring window is built on (the aim cell, else the nearest
+ *                                             rect hit); `view` is the final view. kept / dropped: final view (fine in full mode) after vs
+ *                                             before the rule - 0 dropped when the rule already moved the coarse aim. `coarse` (optional 5th
+ *                                             arg, the possibly filtered coarse view; evaluate passes it): same counts on the coarse view,
+ *                                             i.e. what the rule removed from the any-solution's grid. Omitted when no coarse view is passed.
  * UMD: Node module.exports = factory(require('./engine.js')); browser / worker factory(root.ShotEngine). Load after engine-sweep.js.
  */
 (function (root, factory) {
@@ -59,7 +63,7 @@
     return { kept: kept, dropped: count(before.rectHits) - kept };
   }
 
-  function result(v, sel, p, rule) {
+  function result(v, sel, p, rule, coarse) {
     var s = summary(v.unfiltered || v, v), best = null;
     if (sel && v.rectHits && v.entry) {
       var i = (sel.a * v.nB + sel.b) * v.nC + sel.c;
@@ -70,7 +74,9 @@
       }
       if (i >= 0 && isFinite(v.entry[2 * i])) best = { angleDeg: v.entry[2 * i], speedMps: v.entry[2 * i + 1] };
     }
-    return { rule: norm(rule), kept: s.kept, dropped: s.dropped, best: best };
+    var res = { rule: norm(rule), kept: s.kept, dropped: s.dropped, best: best };
+    if (coarse && coarse.rectHits) res.coarse = summary(coarse.unfiltered || coarse, coarse);
+    return res;
   }
 
   var impl = { norm: norm, cellOk: cellOk, filterView: filterView, summary: summary, result: result };

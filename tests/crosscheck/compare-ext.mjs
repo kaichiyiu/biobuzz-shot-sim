@@ -76,8 +76,9 @@ function runOracle(list, name) {
 }
 const t0 = Date.now(), out = runOracle(cases, 'ext' + tag);
 
-// ---- compare shots. Entry numbers: the engine path stores positions in whole mm (Int16), so a 5 ms segment at the mouth (~10 mm long at
-// 2 m/s) carries up to ~2.4 mm of rounding error: tolerance = 2.4 mm / segment length, plus 1 deg / 1.5 % for sampling (instant vs segment).
+// ---- compare shots. Entry angle (#12a: exact, interpolated from the integrator's angle track): within the card's 1 deg of the oracle.
+// Entry speed still comes from the chord of a 5 ms Int16-mm segment (~10 mm at 2 m/s, up to ~2.4 mm rounding): tolerance = 2.4 mm / segment
+// length, plus 1.5 % for sampling (instant vs segment).
 const fam = Object.fromEntries(['mouth', 'rect', 'spin', 'hood', 'rule'].map((k) => [k, { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }]));
 const num = { seg: [], angleErrDeg: [], speedErrPct: [], over: 0, maxAngleBoundRatio: 0, maxSpeedBoundRatio: 0 }, cov = { mouth: [0, 0], rect: [0, 0], spin: [0, 0] }, bad = [], pend = [];
 units.forEach((u, ci) => {
@@ -93,7 +94,7 @@ units.forEach((u, ci) => {
       if (o.rect_hit) cov[u.fam][1]++;
       if (e.hit && e.angle != null && o.entry_angle_deg != null) {
         const dA = Math.abs(e.angle - o.entry_angle_deg), dS = 100 * Math.abs(e.speed / o.entry_speed - 1), q = 2.4 / e.segMm;
-        const bA = q * 180 / Math.PI + 1, bS = 100 * q + 1.5;
+        const bA = 1, bS = 100 * q + 1.5;
         num.angleErrDeg.push(dA); num.speedErrPct.push(dS); num.seg.push(e.segMm);
         num.maxAngleBoundRatio = Math.max(num.maxAngleBoundRatio, dA / bA); num.maxSpeedBoundRatio = Math.max(num.maxSpeedBoundRatio, dS / bS);
         if (dA > bA || dS > bS) { num.over++; bad.push({ fam: u.fam, kind: 'entry numbers', shot: s, engine: { angle: e.angle, speed: e.speed, segMm: e.segMm }, oracle: { angle: o.entry_angle_deg, speed: o.entry_speed } }); }

@@ -139,3 +139,17 @@ test('abuf is optional and does not change the path: fly() with and without it g
   }
   for (let idx = 0; idx < t.trajs.length; idx += 997) assert.equal(t.angs[idx].length, t.lens[idx]);
 });
+
+// ---- res.entry.coarse (#12b): what the rule removed from the coarse grid, even when the final (fine) view reads dropped = 0
+test('res.entry.coarse: non-zero dropped at (-60,-60), adjustable hood 45-80, descending; final dropped may be 0', () => {
+  const sp = { ...BASE, robot: { x: -60, y: -60 }, hood: { mode: 'adjustable', minDeg: 45, maxDeg: 80 } };
+  const any = E.evaluate({ ...sp, entry: { rule: 'any' } }, 'full').entry, d = E.evaluate({ ...sp, entry: { rule: 'descending' } }, 'full').entry;
+  assert.deepEqual(Object.keys(d.coarse), ['kept', 'dropped']);
+  assert.ok(d.coarse.dropped > 0 && d.coarse.kept > 0, JSON.stringify(d.coarse));
+  assert.equal(d.coarse.kept + d.coarse.dropped, any.coarse.kept, 'coarse before-filter count = the any-rule coarse count');
+  assert.deepEqual(any.coarse, { kept: any.coarse.kept, dropped: 0 });
+  assert.ok(d.kept > 0 && d.best.angleDeg < 0, 'final view unchanged in meaning: kept ' + d.kept + ', best ' + d.best.angleDeg);
+  assert.ok(d.coarse.dropped > d.dropped, `coarse dropped ${d.coarse.dropped} vs final dropped ${d.dropped}`);
+  const c = E.evaluate({ ...sp, entry: { rule: 'descending' } }, 'coarse').entry;   // coarse mode: final view IS the coarse view
+  assert.deepEqual(c.coarse, { kept: c.kept, dropped: c.dropped });
+});
