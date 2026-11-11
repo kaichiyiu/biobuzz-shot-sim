@@ -13,14 +13,14 @@ const dataJs = `window.SHOT_DATA = ${JSON.stringify(data)};\n`;
 fs.writeFileSync(path.join(ROOT, 'src', 'data.js'), dataJs, 'utf8');
 
 // engine + extensions (#3 rect window, #2 hood, sweep), in registration order; also used by the worker
-const ENGINE_FILES = ['engine.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js'];
+const ENGINE_FILES = ['engine.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js'];
 const engine = ENGINE_FILES.map((f) => rd('src', f)).join('\n');
 const worker = rd('src', 'worker.js');
 const units = rd('src', 'units.js');
 const app = rd('src', 'app.js');
 const css = rd('src', 'styles.css') + '\n' + rd('src', 'panel.css') + '\n' + rd('src', 'ext.css');
 // UI modules (window.ShotUI.*): after units.js, before app.js
-const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js', 'ui-spin.js'];
+const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js', 'ui-spin.js', 'ui-entry.js'];
 const markup = rd('src', 'markup.html');
 
 // Inline scripts must never contain a closing script tag.
