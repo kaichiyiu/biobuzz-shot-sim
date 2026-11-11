@@ -3,12 +3,14 @@
 Oracle extension, hood part (split seam of oracle_ext.py): widest-window launch angle on an oracle-built rect-hit grid.
 
   hood_ext(case, hood, axes, field=None) -> {angle_deg, v_window: [lo, hi] m/s, rpm_window | None, range_deg, speed_cut, yaw_cut, ...}
-  case  = shot case without theta/v/yaw (oracle_ext.py fields) + kind "hood"; optional v_cap (motor limit, m/s) and rpm_per_mps
+  case  = shot case without theta/v/yaw (oracle_ext.py fields) + kind "hood"; optional v_cap (motor limit, m/s), rpm_per_mps and
+          at = {angle_deg, yaw_deg: number | [numbers]}: also report at_rect = per yaw the rect-hit flags over the speed nodes at
+          exactly that angle - a physics check of someone else's aim that does not depend on the tie rules below
   hood  = {"mode": "fixed", "angleDeg"} | {"mode": "adjustable", "minDeg", "maxDeg"} (already normalised)
   axes  = nodes like the engine's fine view: angles theta0 + i*th_step (|i|*th_step <= th_span, adjustable only, inside the hood
-          range, 1..89.75), yaws yaw0 + i*yaw_step (<= yaw_span), speeds v0*exp(0.005*i), i_lo <= i <= i_hi. Defaults: steps
-          0.25, spans 6 deg, i +-24. Wider steps save oracle time (~1.5k shots/s). speed_cut / yaw_cut: the window / yaw run
-          touches the axis end, so the number depends on the axis span.
+          range, 1..89.75), yaws yaw0 + i*yaw_step (<= yaw_span), speeds v0*exp(0.005*i), i_lo <= i <= i_hi. Defaults: steps 0.25,
+          spans 6 deg, i +-24 (wider steps save oracle time, ~1.5k shots/s). speed_cut / yaw_cut: the window / yaw run touches an
+          axis end. Also angle_widths [[theta, width]], tie_step (one speed step at the widest window).
 Rules (engine-hood-core.js header + SPEC D15), written independently: per angle the widest speed run over all yaws (ties ->
 lower); yaws within one speed step of the widest form a plateau whose middle yaw gives the angle's window; the optimal angle is
 the widest one, angles within one speed step are tied, the tied run holding the widest angle is recommended and its middle node
@@ -17,9 +19,7 @@ plateau-middle yaw, then alternate speed <- middle of the speed run, yaw <- midd
 its first point); the window is the speed run at the final yaw; a yaw run cut by the yaw axis falls back to the centre yaw.
 """
 import math
-
 import numpy as np
-
 from oracle_ext import classify_batch
 
 EPS = 1e-12
@@ -114,7 +114,7 @@ def analyse(H, th, sp, adjustable, v_cap=None):
         return None
     aws = widest_windows(H, sp, top)
     opt = pick_optimal(aws, sp) if adjustable else None
-    aw = aws[opt['a']] if adjustable and opt else (None if adjustable else aws[0])
+    aw = (aws[opt['a']] if opt else None) if adjustable else aws[0]
     if aw is None or aw['bLo'] < 0:
         return None
     a = aw['a']
@@ -123,13 +123,11 @@ def analyse(H, th, sp, adjustable, v_cap=None):
     nb = (rb[0] + rb[1]) // 2
     rc = run_near(H[a, nb, :], c)
     ycut = bool(rc and (rc[0] == 0 or rc[1] == nC - 1))
-    if ycut:                                         # yaw run cut by the axis: keep the centre yaw, re-centre the speed there
-        r2 = run_near(H[a, :top + 1, nC // 2], nb)
-        if r2:
-            rb, c = r2, nC // 2
+    r2 = run_near(H[a, :top + 1, nC // 2], nb) if ycut else None   # yaw run cut by the axis: centre yaw, speed re-centred there
+    rb, c = (r2, nC // 2) if r2 else (rb, c)
     return dict(angle_deg=th[a], v_window=[sp[rb[0]], sp[rb[1]]], width=sp[rb[1]] - sp[rb[0]], yaw_index=c,
                 range_deg=[th[opt['aLo']], th[opt['aHi']]] if opt else None, speed_cut=rb[0] == 0 or rb[1] == nB - 1,
-                yaw_cut=ycut, capped=rb[1] == top and top < nB - 1)
+                yaw_cut=ycut, angle_widths=[[th[w['a']], w['width']] for w in aws], tie_step=step_at(sp, aw['bHi']))
 
 def build_axes(hood, ax):
     ts, ys = ax.get('th_step', 0.25), ax.get('yaw_step', 0.25)
@@ -153,8 +151,12 @@ def hood_ext(case, hood, axes, field=None):
     out = analyse(H, th, sp, hood['mode'] == 'adjustable', case.get('v_cap'))
     if out is None:
         return {'angle_deg': None, 'v_window': None, 'rpm_window': None, 'n_rect': int(H.sum())}
-    k = case.get('rpm_per_mps')
-    return dict(out, n_rect=int(H.sum()), rpm_window=[k * v for v in out['v_window']] if k else None)
+    k, at, aw = case.get('rpm_per_mps'), case.get('at'), None
+    if at:                                                      # rect flags over the speed nodes at exactly the given angle, per yaw
+        yy = at['yaw_deg'] if isinstance(at['yaw_deg'], list) else [at['yaw_deg']]
+        ra = classify_batch([dict(base, shots=[{'theta': at['angle_deg'], 'v': v, 'yaw': y} for y in yy for v in sp])], field, dt=1e-3)[0]
+        aw = [[x['rect_hit'] for x in ra[i * len(sp):(i + 1) * len(sp)]] for i in range(len(yy))]
+    return dict(out, yaw_deg=ys[out['yaw_index']], n_rect=int(H.sum()), at_rect=aw, rpm_window=[k * v for v in out['v_window']] if k else None)
 
 def selftest(field=None):
     n = [0, 0]
@@ -183,17 +185,16 @@ def selftest(field=None):
     chk('h5 yaw plateau within one step: middle yaw c = 2, window at c', (aw['cLo'], aw['cHi'], aw['c'], aw['bLo'], aw['bHi']) == (0, 4, 2, 5, 8))
     row = np.zeros(40, bool)
     row[3:7] = row[10:14] = True
-    chk('h6 equal runs in a column: the lower run', widest_run(row, lin)[:2] == (3, 6))
-    chk('h7 no hit -> None', analyse(np.zeros((3, 40, 5), bool), [1.0, 2.0, 3.0], sp, False) is None)
+    chk('h6 equal runs in a column: the lower run; no hit -> None', widest_run(row, lin)[:2] == (3, 6) and analyse(np.zeros((3, 40, 5), bool), [1.0, 2.0, 3.0], sp, False) is None)
     H = grid({(3, c): (10, 30) for c in range(5)})
-    chk('h8 motor cap clips the window at the highest allowed node', analyse(H[3:4], th[3:4], sp, False, v_cap=sp[24])['v_window'][1] == sp[24])
+    chk('h7 motor cap clips the window at the highest allowed node', analyse(H[3:4], th[3:4], sp, False, v_cap=sp[24])['v_window'][1] == sp[24])
     Hc = np.zeros((1, 40, 5), bool)
     Hc[0, 10:21, 1] = Hc[0, 20:31, 3] = True
-    chk('h9 centre aim ends inside a run (cycle keeps its first point)', centre_aim(Hc, sp, 0, 15, 1, 39)[0] in range(10, 31))
+    chk('h8 centre aim ends inside a run (cycle keeps its first point)', centre_aim(Hc, sp, 0, 15, 1, 39)[0] in range(10, 31))
     ax = {'yaw0': 90.0, 'yaw_span': 3.0, 'yaw_step': 0.5, 'v0': 5.2, 'i_lo': -16, 'i_hi': 30}
     case = {'mouth': {'x': -12.75, 'y': -48, 'height': 16}, 'target': 'red'}
     o = hood_ext(case, {'mode': 'fixed', 'angleDeg': 65.0}, ax, field)
-    chk('h10 fixed 65 deg end to end: window found, its edge nodes are rect hits',
+    chk('h9 fixed 65 deg end to end: window found, its edge nodes are rect hits',
         o['v_window'] is not None and all(classify_batch([dict(case, theta=65.0, v=v, yaw=90.0)], field)[0]['rect_hit'] for v in o['v_window']))
     print('oracle_ext_hood selftest: %d passed, %d failed' % tuple(n))
     return n[1] == 0
