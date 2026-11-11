@@ -166,8 +166,10 @@ def selftest():
         chk('10 spin top is rejected until B2', False)
     except ValueError:
         chk('10 spin top is rejected until B2', True)
-    print('oracle_ext selftest: %d passed, %d failed' % (ok[0], ok[1]))
-    return ok[1] == 0
+    from oracle_ext_hood import selftest as hood_selftest
+    h_ok = hood_selftest(field)
+    print('oracle_ext selftest: %d passed, %d failed; hood %s' % (ok[0], ok[1], 'ok' if h_ok else 'FAILED'))
+    return ok[1] == 0 and h_ok
 
 
 def main(argv=None):
