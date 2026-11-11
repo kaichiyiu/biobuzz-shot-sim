@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
-const EXTENSIONS = ['engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js'];
+const EXTENSIONS = ['engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js', 'engine-export.js', 'engine-export-bearing.js'];
 
 export function loadData() {
   const rd = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, 'data', f), 'utf8'));

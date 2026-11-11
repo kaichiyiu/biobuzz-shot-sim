@@ -13,19 +13,22 @@ const dataJs = `window.SHOT_DATA = ${JSON.stringify(data)};\n`;
 fs.writeFileSync(path.join(ROOT, 'src', 'data.js'), dataJs, 'utf8');
 
 // engine + extensions (#3 rect window, #2 hood, sweep), in registration order; also used by the worker
-const ENGINE_FILES = ['engine.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js'];
+const ENGINE_FILES = ['engine.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js', 'engine-export.js', 'engine-export-bearing.js'];
 const engine = ENGINE_FILES.map((f) => rd('src', f)).join('\n');
 const worker = rd('src', 'worker.js');
+// worker-only additions (appended after worker.js): calib-core for the eta curve, the export sweep protocol. The page loads calib-core through UI_FILES.
+const WORKER_EXT = ['calib-core.js', 'worker-export.js'];
+const workerExt = WORKER_EXT.map((f) => rd('src', f)).join('\n');
 const units = rd('src', 'units.js');
 const app = rd('src', 'app.js');
 const css = rd('src', 'styles.css') + '\n' + rd('src', 'panel.css') + '\n' + rd('src', 'ext.css');
 // UI modules (window.ShotUI.*): after units.js, before app.js
-const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js', 'ui-spin.js', 'ui-entry.js', 'calib-core.js', 'calib-plan.js', 'calib-fit.js', 'calib-csv.js', 'calib-video.js', 'calib-validate.js', 'ui-calib-grid.js', 'ui-calib-form.js', 'ui-calib-report.js', 'config-schema.js', 'config-io.js', 'ui-config.js'];
+const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js', 'ui-spin.js', 'ui-entry.js', 'calib-core.js', 'calib-plan.js', 'calib-fit.js', 'calib-csv.js', 'calib-video.js', 'calib-validate.js', 'ui-calib-grid.js', 'ui-calib-form.js', 'ui-calib-report.js', 'export-format.js', 'export-runner.js', 'ui-export-panel.js', 'ui-export.js', 'ui-accuracy.js', 'config-schema.js', 'config-io.js', 'ui-config.js'];
 const markup = rd('src', 'markup.html');
 
 // Inline scripts must never contain a closing script tag.
 const safe = (s) => s.replace(/<\/(script)/gi, '<\/$1');
-const workerSrc = `window.SHOT_WORKER_SRC = ${JSON.stringify(engine + '\n' + worker)};\n`;
+const workerSrc = `window.SHOT_WORKER_SRC = ${JSON.stringify(engine + '\n' + worker + '\n' + workerExt)};\n`;
 
 const fragment = [
   '<title>BIOBUZZ Shot Sim</title>',

@@ -23,6 +23,9 @@ const UI = [
   // eta calibration (issue #11, E1-E7)
   'src/calib-core.js', 'src/calib-plan.js', 'src/calib-fit.js', 'src/calib-csv.js', 'src/calib-video.js', 'src/calib-validate.js',
   'src/ui-calib-grid.js', 'src/ui-calib-form.js', 'src/ui-calib-report.js',
+  // export (issue #4, F1-F7)
+  'src/engine-export.js', 'src/engine-export-bearing.js', 'src/worker-export.js', 'src/export-format.js', 'src/export-runner.js', 'src/ui-export.js', 'src/ui-export-panel.js', 'src/ui-accuracy.js',
+  'tests/export-row.test.mjs', 'tests/export-bearing.test.mjs', 'tests/worker-export.test.mjs', 'tests/export-format.test.mjs', 'tests/export-runner.test.mjs', 'tests/ui-export.test.mjs', 'tests/ui-accuracy.test.mjs',
   'tests/calib-core.test.mjs', 'tests/calib-plan.test.mjs', 'tests/calib-fit.test.mjs', 'tests/calib-io.test.mjs', 'tests/calib-validate.test.mjs',
   'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',
 ];
