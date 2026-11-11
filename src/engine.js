@@ -889,7 +889,7 @@
    * a cheap explanatory cause. hits/causes are written at base + y.
    */
   var _out = { code: 0, k: 0, t: 0 };
-  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits) {   // rhits: optional zero-filled rect-hit output (#3)
+  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits, eout) {   // rhits: optional zero-filled rect-hit output (#3); eout: optional NaN-filled entry output (#12)
     var G = S.G, nY = ycs.length, y;
     var kz = cantIndex(ctx, P, n, apexIdx);
     var zLo = ctx.zBandLoMM, zHi = ctx.zBandHiMM;
@@ -957,7 +957,14 @@
       if (cand) {
         var code = runTest(ctx, yc, P, n, apexIdx, mono, preMax, kz, _out);
         hits[base + y] = code === C_HIT ? 1 : 0;
-        if (rhits && code === C_HIT && q <= G.W2 - ctx.r && B >= ctx.r && B <= G.SH - ctx.r) rhits[base + y] = 1;   // crossing (q, B) of the candidate
+        if (rhits && code === C_HIT && q <= G.W2 - ctx.r && B >= ctx.r && B <= G.SH - ctx.r) {   // crossing (q, B) of the candidate
+          rhits[base + y] = 1;
+          if (eout) {   // entry angle (deg, < 0 descending) and speed (m/s) of the candidate-crossing segment, same formula as classifyCore
+            var eR = P[2 * kk] - P[2 * kk - 2], eZ = P[2 * kk + 1] - P[2 * kk - 1], ei = 2 * (base + y);
+            eout[ei] = Math.atan2(eZ, eR) / DEG;
+            eout[ei + 1] = Math.sqrt(eR * eR + eZ * eZ) / 1000 / (TBL.dt * TBL.storeEvery);
+          }
+        }
         causes[base + y] = code;
         if (code === C_HIT) nh++;
       } else {
@@ -990,14 +997,15 @@
     var ycs = fan.yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nT = table.nT, nV = table.nV, nY = ycs.length, N = nT * nV;
     var hits = new Uint8Array(N * nY), causes = new Uint8Array(N * nY), rectHits = new Uint8Array(N * nY);
+    var entry = new Float32Array(2 * N * nY).fill(NaN);   // (#12) [2i] angle deg, [2i+1] speed m/s at rect-hit cells, else NaN
     var nHits = 0, minHitJ = nV;
     for (var idx = 0; idx < N; idx++) {
-      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY, rectHits);
+      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY, rectHits, entry);
       if (nh > 0) { nHits += nh; var j = idx % nV; if (j < minHitJ) minHitJ = j; }
     }
     var grid = {
       key: key, table: table, ctx: ctx, ycs: ycs, yaws: fan.yaws, dPsi: fan.dPsi,
-      nA: nT, nB: nV, nC: nY, hits: hits, rectHits: rectHits, causes: causes, nHits: nHits,
+      nA: nT, nB: nV, nC: nY, hits: hits, rectHits: rectHits, entry: entry, causes: causes, nHits: nHits,
       minHitV: minHitJ < nV ? table.speeds[minHitJ] : null,
       ms: 0
     };
@@ -1221,15 +1229,16 @@
     for (i = -n; i <= n; i++) { var vv = i === 0 ? sel.v : Math.exp(lv0 + i * 0.005); if (vv >= 0.5 && vv <= 40) sps.push(vv); }
     var nA = ths.length, nB = sps.length, nC = yaws.length;
     var hits = new Uint8Array(nA * nB * nC), causes = new Uint8Array(nA * nB * nC), rectHits = new Uint8Array(nA * nB * nC);
+    var entry = new Float32Array(2 * nA * nB * nC).fill(NaN);
     var ycs = yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nHits = 0;
     for (var a = 0; a < nA; a++) {
       for (var b = 0; b < nB; b++) {
         fly(table.K, table.S0, ths[a], sps[b], _fbuf, _finfo);
-        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC, rectHits);
+        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC, rectHits, entry);
       }
     }
-    var view = { hits: hits, rectHits: rectHits, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
+    var view = { hits: hits, rectHits: rectHits, entry: entry, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
       thStep: 0.25, lnStep: 0.005, yawStep: 0.25, nHits: nHits };
     var fsel = nHits && !(opts && opts.skipAim) ? selectAim(view, p, mo, sh, bp, false) : null;
     return { view: view, sel: fsel };
@@ -1237,7 +1246,7 @@
 
   function coarseView(grid) {
     var t = grid.table;
-    return { hits: grid.hits, rectHits: grid.rectHits, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
+    return { hits: grid.hits, rectHits: grid.rectHits, entry: grid.entry, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
       thetas: t.thetas, speeds: t.speeds, yaws: grid.yaws, thStep: t.thStep, lnStep: t.lnStep, yawStep: grid.dPsi, nHits: grid.nHits };
   }
 
@@ -1271,7 +1280,7 @@
     path.push([x0 + rE * c, y0 + rE * s, h0 + zE * IPM]);
     if (h0 + zE * IPM > apex) apex = h0 + zE * IPM;
     // last inward crossing of the mouth plane inside the pentagon, before the decision point
-    var tTo = null, vIn = null, T = ctx.T;
+    var tTo = null, vIn = null, aIn = null, T = ctx.T;
     var fp = yc.fA * P[0] + yc.fB * P[1] + yc.fC;
     for (i = 1; i <= kEnd; i++) {
       var fk = yc.fA * P[2 * i] + yc.fB * P[2 * i + 1] + yc.fC;
@@ -1283,12 +1292,29 @@
           if (insidePentagon(bw[0], bw[2])) {
             tTo = (i - 1 + tc) * TBL.dt * TBL.storeEvery;
             vIn = Math.hypot(P[2 * i] - P[2 * i - 2], P[2 * i + 1] - P[2 * i - 1]) / 1000 / (TBL.dt * TBL.storeEvery);
+            aIn = Math.atan2(P[2 * i + 1] - P[2 * i - 1], P[2 * i] - P[2 * i - 2]) / DEG;   // < 0 descending (#12)
           }
         }
       }
       fp = fk;
     }
-    return { hit: code === C_HIT, cause: code === C_HIT ? null : CAUSE_NAMES[code], path: path, apexIn: apex, tToCell: tTo, entrySpeed: vIn, code: code };
+    // rect hit (#12): testTraj's rule at its first candidate crossing (inside the pentagon with >= 0.5 r clearance), only for pentagon hits
+    var rectHit = false;
+    if (code === C_HIT) {
+      var kzEnd = kz < n - 1 ? kz : n - 1;
+      fp = yc.fA * P[0] + yc.fB * P[1] + yc.fC;
+      for (i = 1; i <= kzEnd; i++) {
+        var fk2 = yc.fA * P[2 * i] + yc.fB * P[2 * i + 1] + yc.fC;
+        if (fp >= 0 && fk2 < 0) {
+          var t2 = fp / (fp - fk2), rr2 = P[2 * i - 2] + t2 * (P[2 * i] - P[2 * i - 2]), zz2 = P[2 * i - 1] + t2 * (P[2 * i + 1] - P[2 * i - 1]);
+          var py2 = y0 + rr2 * s, dz2 = h0 + zz2 * IPM - G.pz, B2 = -T.sg * py2 * G.sa + dz2 * G.ca - G.b0, q2 = x0 + rr2 * c - T.hx;
+          if (q2 < 0) q2 = -q2;
+          if (insideqb(q2, B2) && dEdge2qb(q2, B2) >= 0.25 * ctx.r2) { rectHit = q2 <= G.W2 - ctx.r && B2 >= ctx.r && B2 <= G.SH - ctx.r; break; }
+        }
+        fp = fk2;
+      }
+    }
+    return { hit: code === C_HIT, cause: code === C_HIT ? null : CAUSE_NAMES[code], path: path, apexIn: apex, tToCell: tTo, entrySpeed: vIn, entryAngleDeg: aIn, rectHit: rectHit, code: code };
   }
 
   function classifyShot(params, thetaDeg, v, yawDeg) {
