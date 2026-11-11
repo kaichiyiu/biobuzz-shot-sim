@@ -100,7 +100,7 @@ test('dual wheels: etaDual = factor * 2 / (1 + topRatio) and recovers the true e
   near(r.eta.dual, trueEta, 0.015); assert.equal(r.eta.single, undefined);
 });
 
-test('spreadRpm grows with landing noise; its definition (half the 5-95 % range) matches 1.645 sigma on large samples', () => {
+test('spreadRpm grows with landing noise; it matches 1.645 sigma on large samples', () => {
   const sp = [0.5, 2, 6].map((noise) => fit(gen(SINGLE, 0.36, [2200, 3000, 3800], { noise, seed: 11 }), SINGLE).spreadRpm);
   assert.ok(sp[0] < sp[1] && sp[1] < sp[2] && sp[0] > 0, sp.join());
   // one row, 600 shots: spreadRpm ~ 1.645 * sigma_d / (d landing / d rpm)
@@ -109,6 +109,20 @@ test('spreadRpm grows with landing noise; its definition (half the 5-95 % range)
   const L = (rpm) => C.landingIn(E, 'pollen', so.S0, 45, C.exitSpeedFromMotorRpm(rpm, so.sh, 0.36), 16);
   const slope = (L(m + 10) - L(m - 10)) / 20;
   near(r.spreadRpm, 1.645 * 3 / slope, 0.12 * 1.645 * 3 / slope, 'rpm spread');
+});
+
+test('spreadRpm: mean over 600 synthetic sessions is within 5 % of 1.645 sigma (rpm-equivalent), 3 settings x 5 shots', () => {
+  const sigma = 40, rpms = [2200, 3000, 3800], so = C.shooterOf(E, cfgOf(SINGLE)), g = rng(77);
+  let sum = 0, N = 600;
+  for (let s = 0; s < N; s++) {
+    const rows = rpms.map((rpm, i) => {
+      const v = (r) => C.exitSpeedFromMotorRpm(r, so.sh, 0.36);
+      return { settingId: 's' + i, ballId: 'pollen', h0In: 16, hoodDeg: 45, measuredMotorRpm: rpm,
+        landingIn: Array.from({ length: 5 }, () => C.landingIn(E, 'pollen', so.S0, 45, v(rpm + sigma * g()), 16)) };
+    });
+    sum += fit(rows, SINGLE).spreadRpm;
+  }
+  near(sum / N, 1.645 * sigma, 0.05 * 1.645 * sigma, 'mean spreadRpm');
 });
 
 test('angle offset from video: used in the inversion, reported, and removes the bias it explains', () => {

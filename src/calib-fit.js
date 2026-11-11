@@ -15,6 +15,9 @@
     var s = sorted(a), h = (s.length - 1) * p, lo = Math.floor(h), hi = Math.ceil(h);
     return s[lo] + (s[hi] - s[lo]) * (h - lo);
   }
+  var Z90 = 1.6449;                      // z_0.95: half-width of a two-sided 90 % normal interval in sigmas
+  function ss(a) { var m = mean(a); return a.reduce(function (t, x) { return t + (x - m) * (x - m); }, 0); }   // sum of squared deviations
+  function c4(m) { return 1 - 1 / (4 * m) - 7 / (32 * m * m); }   // E[s]/sigma for m degrees of freedom (approx., < 0.1 % off for m >= 1): removes the low bias of a sample sd
   function halfRange90(a) { return a.length < 2 ? 0 : (quantile(a, 0.95) - quantile(a, 0.05)) / 2; }
   function mad(a) { var m = median(a); return median(a.map(function (x) { return Math.abs(x - m); })); }
   function mean(a) { return a.reduce(function (s, x) { return s + x; }, 0) / a.length; }
@@ -103,7 +106,7 @@
     var fAt = function (rpm) { return curve ? Core.factorAt(curve, rpm) : fHat; };
 
     // per-row report, spreads in rpm-equivalents
-    var spreadRpm = 0;
+    var spreadRpm = 0, ssSum = 0, dof = 0;   // spreadRpm = 1.645 x pooled within-setting sd (Bessel) of per-shot rpm-equivalents
     var out = infos.map(function (ri) {
       var r = ri.row, f = fAt(r.measuredMotorRpm), pred = null, why = [];
       var d = Core.landingIn(E, r.ballId, S0, ri.theta, f * k * r.measuredMotorRpm, r.h0In);
@@ -113,14 +116,15 @@
       if (nOut) why.push(nOut + ' outlier shot(s)');
       if (nBad) why.push(nBad + ' shot(s) the model cannot reach');
       if (!inl.length) why.push('no usable shots');
-      var sp = halfRange90(inl.map(function (s) { return s.v / (f * k); }));
-      if (sp > spreadRpm) spreadRpm = sp;
+      var xs = inl.map(function (s) { return s.v / (f * k); }), sp = 0;
+      if (xs.length >= 2) { var q = ss(xs); sp = Z90 * Math.sqrt(q / (xs.length - 1)) / c4(xs.length - 1); ssSum += q; dof += xs.length - 1; }
       ri.sf = inl.length >= 3 ? halfRange90(inl.map(function (s) { return s.f; })) : null;
       var mean_ = lands.length ? mean(lands) : null;
       return { i: ri.i, settingId: r.settingId, rpm: r.measuredMotorRpm, nShots: ri.shots.length, nUsed: inl.length,
         predictedIn: pred, meanIn: mean_, residualIn: mean_ != null && pred != null ? mean_ - pred : null,
         spreadIn: halfRange90(lands), spreadRpm: sp, factor: ri.fRow, flag: why.length ? 'repeat' : 'ok', reason: why.join('; ') };
     });
+    if (dof > 0) spreadRpm = Z90 * Math.sqrt(ssSum / dof) / c4(dof);
     var sfs = infos.map(function (ri) { return ri.sf; }).filter(function (x) { return x != null; }), msf = median(sfs);
     if (sfs.length >= 3 && msf > 0) infos.forEach(function (ri, j) {
       if (ri.sf > SPREAD_RATIO * msf) { out[j].flag = 'repeat'; out[j].reason += (out[j].reason ? '; ' : '') + 'spread more than ' + SPREAD_RATIO + 'x the typical row'; }
