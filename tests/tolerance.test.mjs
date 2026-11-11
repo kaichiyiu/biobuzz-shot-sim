@@ -55,11 +55,11 @@ test('synthetic view: margins match the hand calculation (angle, speed, yaw brea
   const view = synth(), tn = { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 0 };
   const r = run(tn, res0(), view, sel0(view));
   const rpmC = r.setpoint.motorRpm, x = 50 / rpmC;
-  // ones: a 7..15 (3 below, 5 above the cell 10), b 16..30 (4 / 10), c 9..17 (6 / 2). First failing m = run + 1; k = index units per s.
-  const angle = Math.min(4 / (1 / TH), 6 / (1 / TH)), yaw = Math.min(7 / (1 / YS), 3 / (1 / YS));
-  const rpm = Math.min(5 / (-Math.log(1 - x) / LN), 11 / (Math.log(1 + x) / LN));
+  // ones: a 7..15 (3 below, 5 above the cell 10), b 16..30 (4 / 10), c 9..17 (6 / 2). Conservative: ceil(s * k) cells must be ones, so s = run / k (k = index units per s).
+  const angle = Math.min(3 / (1 / TH), 5 / (1 / TH)), yaw = Math.min(6 / (1 / YS), 2 / (1 / YS));
+  const rpm = Math.min(4 / (-Math.log(1 - x) / LN), 10 / (Math.log(1 + x) / LN));
   assert.ok(Math.abs(r.perAxis.angle - angle) < 1e-6 && Math.abs(r.perAxis.yaw - yaw) < 1e-6 && Math.abs(r.perAxis.rpm - rpm) < 1e-6, JSON.stringify([r.perAxis, angle, yaw, rpm]));
-  assert.ok(Math.abs(r.boxMargin - yaw) < 1e-6, `${r.boxMargin} vs ${yaw}`);   // yaw is the tightest: 3 cells above / 4 per s
+  assert.ok(Math.abs(r.boxMargin - yaw) < 1e-6, `${r.boxMargin} vs ${yaw}`);   // yaw is the tightest: 2 cells above / 4 per s = 0.5
   assert.deepEqual([r.limitingAxis, r.limitingSide, r.viewLimited, r.lowerBound, r.capped], ['yaw', 1, false, false, false]);
   assert.equal(r.alongMargin, null); assert.equal(r.position.alongIn, null); assert.equal(r.margin, r.boxMargin);
   assert.ok(Math.abs(r.position.lateralIn - 100 * Math.tan(r.boxMargin * 1 * Math.PI / 180)) < 1e-9);
@@ -70,10 +70,10 @@ test('synthetic view: lateral position adds atan(posIn / dist) degrees to the ya
   const view = synth(), tn = { yawDeg: 0.5, angleDeg: 0, rpm: 0, posIn: 0 };
   const wY = 0.5 + Math.atan(1.75 / 100) * 180 / Math.PI;
   const a = run(tn, res0(), view, sel0(view)), b = T.result(view, sel0(view), res0(), T.norm({ yawDeg: 0.5, posIn: 0 }), deps);
-  assert.ok(Math.abs(a.boxMargin - 3 * YS / 0.5) < 1e-6, String(a.boxMargin));
+  assert.ok(Math.abs(a.boxMargin - 2 * YS / 0.5) < 1e-6, String(a.boxMargin));   // 2 cells above the cell, 2 cells per s
   // posIn > 0 also runs alongRange on the real BASE geometry; the box part only needs the yaw term
   const c = run({ yawDeg: 0.5, posIn: 1.75 }, res0(), view, sel0(view));
-  assert.ok(Math.abs(c.perAxis.yaw - 3 * YS / wY) < 1e-6, `${c.perAxis.yaw} vs ${3 * YS / wY}`);
+  assert.ok(Math.abs(c.perAxis.yaw - 2 * YS / wY) < 1e-6, `${c.perAxis.yaw} vs ${2 * YS / wY}`);
   assert.ok(b.boxMargin > 0);
 });
 
@@ -81,8 +81,8 @@ test('synthetic view: an axis with tolerance 0 is unconstrained; rpm tolerance >
   const view = synth(), r = run({ yawDeg: 1, angleDeg: 0, rpm: 0, posIn: 0 }, res0(), view, sel0(view));
   assert.equal(r.perAxis.angle, 4); assert.equal(r.perAxis.rpm, 4); assert.ok(r.boxMargin < 4);
   const big = run({ rpm: 1e6 }, res0(), view, sel0(view));
-  const kPos = Math.log(1 + 1e6 / big.setpoint.motorRpm) / LN;   // low side: k = b + 1 = 21 (4 ones below, m = 5); high side: 10 ones above, m = 11
-  assert.ok(Math.abs(big.perAxis.rpm - Math.min(5 / 21, 11 / kPos)) < 1e-6, String(big.perAxis.rpm));
+  const kPos = Math.log(1 + 1e6 / big.setpoint.motorRpm) / LN;   // low side: k = b + 1 = 21 (4 ones below -> 4 / 21); high side: 10 ones above -> 10 / kPos
+  assert.ok(Math.abs(big.perAxis.rpm - Math.min(4 / 21, 10 / kPos)) < 1e-6, String(big.perAxis.rpm));
 });
 
 test('synthetic view: capped at sMax; lowerBound when the box ran into the view edge', () => {

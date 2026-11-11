@@ -5,12 +5,15 @@
  *
  * largestBox({ H, dims: [nA, nB, nC], center: [a, b, c], neg: [3], pos: [3], sMax = Infinity, S? }) ->
  *   { s, resolution, limitingAxis: 0|1|2|null, limitingSide: -1|1|null, perAxis: [3], viewLimited, sLo, sHi }
- *   Box at scale s = index ranges [c_i - floor(s * neg_i), c_i + floor(s * pos_i)] (neg / pos = index units per s = 1, asymmetric allowed).
+ *   Box at scale s = index ranges [c_i - ceil(s * neg_i), c_i + ceil(s * pos_i)] (neg / pos = index units per s = 1, asymmetric allowed):
+ *   CONSERVATIVE, the cells covered include the first cell at or beyond s * k on every side, so every point of the continuous box at
+ *   scale s (reaching s * k cells from the centre) lies in a cell that is checked. Scale 0 = the centre cell only.
  *   neg_i or pos_i = 0: that side never extends; both 0: axis i is not constrained (tolerance 0 = a one-cell axis).
- *   s = the largest scale whose box is all ones. The integer box only changes at breakpoints s = m / k, so the answer is found by exact
- *   bisection over the finite breakpoint set (no float tolerance); the supremum is the first failing breakpoint sHi and is not attained, so
- *   s = sHi * (1 - 1e-9) ("just under"); sLo = last good breakpoint; resolution = sHi - sLo. s = sMax (not limited) when the whole range up to
- *   sMax is clean (Infinity without sMax and without constraints). Centre cell 0 -> s = 0.
+ *   s = the largest scale whose box is all ones. The integer box is constant on ((m-1)/k, m/k] and grows just after each point m / k, so the
+ *   answer is found by exact bisection over the finite breakpoint set m / k (+ sMax; no float tolerance). A clean interval is closed on the
+ *   right, so the supremum IS attained at the last good breakpoint: s = sLo (guaranteed: everything inside the scale-s box scores on the
+ *   grid). sHi = the first failing breakpoint, the optimistic end: the true continuous margin lies in [sLo, sHi); resolution = sHi - sLo.
+ *   s = sMax (not limited) when the whole range up to sMax is clean (Infinity without sMax and without constraints). Centre cell 0 -> s = 0.
  *   viewLimited = the box ran into the grid edge before any zero cell: the margin is then only a LOWER BOUND. limitingAxis / limitingSide name
  *   the side that hit the zero cell (or the edge); ties go to the lowest axis, low side first. null when s = 0 or s = sMax.
  *   perAxis[i] = the same margin along axis i alone (the other axes at the centre).
@@ -22,7 +25,6 @@
   else root.ShotToleranceCore = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var JUST_UNDER = 1e-9;
 
   function dimArr(d) { return Array.isArray(d) || ArrayBuffer.isView(d) ? [d[0], d[1], d[2]] : [d.nA, d.nB, d.nC]; }
 
@@ -61,10 +63,12 @@
       sides.push({ room: (i & 1) ? dims[i >> 1] - 1 - cen[i >> 1] : cen[i >> 1], k: k[i], L: [] });
       for (m = 1; k[i] > 0 && m <= sides[i].room + 1 && m / k[i] <= sMax; m++) { sides[i].L.push(m / k[i]); all.push(m / k[i]); }
     }
+    if (sMax > 0 && sMax < Infinity) all.push(sMax);   // the extents step just after the last m / k below sMax, so sMax itself is checked
     all.sort(function (p, q) { return p - q; });
     all = all.filter(function (v, q) { return q === 0 || v !== all[q - 1]; });
 
-    function ext(v) { return sides.map(function (sd) { return upper(sd.L, v); }); }
+    // ceil(v * k) per side, from the exact breakpoint list: (# m / k < v) + 1; the (1 - 1e-12) keeps v = m / k from counting itself
+    function ext(v) { return sides.map(function (sd) { return v > 0 && sd.k > 0 ? upper(sd.L, v * (1 - 1e-12)) + 1 : 0; }); }
     function status(e) {   // 0 clean, 1 a zero cell inside the view, 2 clean inside the view but the box left it
       var l = [0, 1, 2].map(function (q) { return cen[q] - Math.min(e[2 * q], sides[2 * q].room); });
       var h = [0, 1, 2].map(function (q) { return cen[q] + Math.min(e[2 * q + 1], sides[2 * q + 1].room); });
@@ -83,7 +87,7 @@
       return out;
     }
     x = all[hi]; eNew = ext(x); eOld = ext(out.sLo);
-    out.sHi = x; out.resolution = x - out.sLo; out.s = Math.max(out.sLo, x * (1 - JUST_UNDER));
+    out.sHi = x; out.resolution = x - out.sLo; out.s = out.sLo;
     for (i = 0; i < 6; i++) if (eNew[i] > eOld[i]) cand.push(i);   // sides that step at x, lowest axis / low side first
     if (status(eNew) === 1) {   // a real zero cell: the margin is exact
       pick = cand.filter(function (q) { return eNew[q] <= sides[q].room; }).filter(function (q) {
