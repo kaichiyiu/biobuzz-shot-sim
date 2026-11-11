@@ -13,3 +13,19 @@
 .cfg-bar .btn { min-height: 30px; padding: 4px 10px; font-size: 13px; }
 .cfg-msg { font: 500 12px/1.2 var(--mono); color: var(--ink-2); max-width: 26ch; }
 .cfg-msg:empty { display: none; }
+/* eta calibration (ui-calib-*) */
+.calib-sec { display: grid; gap: 8px; margin-top: 8px; }
+.calib-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.calib-f { display: grid; gap: 2px; font-size: 12px; }
+.calib-grid th, .calib-grid td { padding: 3px 6px; text-align: right; font-size: 12px; white-space: nowrap; }
+.calib-grid th:first-child, .calib-grid td:first-child { text-align: left; }
+.calib-grid tr.calib-bad td { background: color-mix(in srgb, var(--bad-mark, #c33) 14%, transparent); }
+.calib-grid tr.calib-repeat td { background: color-mix(in srgb, var(--warn-mark, #c90) 18%, transparent); }
+.calib-msgs { margin: 0; padding-left: 18px; font-size: 12px; }
+.calib-error { color: var(--bad-mark, #c33); }
+.calib-warn { color: var(--ink-2); }
+.calib-video { font-size: 13px; }
+.calib-video .calib-f { display: inline-grid; margin: 4px 8px 4px 0; }
+.calib-sum { font-size: 13px; margin: 0; }
+.calib-badge { display: block; font-weight: 600; color: var(--ink); }
+.calib-badge:empty { display: none; }
