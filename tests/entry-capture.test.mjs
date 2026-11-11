@@ -89,7 +89,7 @@ function refAngle(S0, th, v, t) {
 function rectCells(view) { const l = []; for (let i = 0; i < view.hits.length; i++) if (view.rectHits[i]) l.push(i); return l; }
 
 test('engine entry angle vs float reference (dt 0.5 ms at tToCell): <= 0.1 deg, no sign errors, 3 spots', () => {
-  let total = 0, slow = 0, zero = 0;
+  let total = 0, slow = 0, zero = 0, maxAbs = 0;
   for (const [x, y] of [[-12.75, -48], [-60, -60], [24, -60]]) {
     const q = setup({ ...BASE, robot: { x, y } }), rc = rectCells(q.view), rand = rng(x * 7 + y);
     const bySpeed = rc.slice().sort((i, j) => q.view.entry[2 * i + 1] - q.view.entry[2 * j + 1]).slice(0, 60);   // the slowest entries are the hard ones
@@ -104,12 +104,14 @@ test('engine entry angle vs float reference (dt 0.5 ms at tToCell): <= 0.1 deg, 
         if (ref < -0.05) assert.ok(a < 0, `${what} sign: ${a} vs true ${ref}`);
         if (ref > 0.05) assert.ok(a > 0, `${what} sign: ${a} vs true ${ref}`);
       }
+      maxAbs = Math.max(maxAbs, Math.abs(ref));
       total++; if (q.view.entry[2 * i + 1] < 2.5) slow++; if (r.entryAngleDeg === 0) zero++;
     }
   }
   assert.ok(total >= 200, 'cells compared: ' + total);
   assert.ok(slow >= 30, 'slow entries included: ' + slow);
   assert.equal(zero, 0, 'no cell collapses to exactly 0.0 deg any more');
+  assert.ok(maxAbs < 88, 'entry angles stay away from +-90 deg (sine encoding: truncation < 1/32767/cos(angle) rad, 0.05 deg at 88): max |angle| ' + maxAbs);
 });
 
 test("'descending' at BASE: no angle is exactly 0, more cells pass than with the segment formula, no rising cell passes", () => {
@@ -134,8 +136,8 @@ test('abuf is optional and does not change the path: fly() with and without it g
     assert.equal(na, nb);
     assert.deepEqual(a.slice(0, 2 * na), b.slice(0, 2 * nb));
     assert.deepEqual(Array.from(ia), Array.from(ib));
-    assert.equal(ab[0], Math.round(th * 100));
-    assert.ok(ab[nb - 1] < 0 && ab[nb - 1] > -9000, 'descending at the end of a lob: ' + ab[nb - 1]);
+    assert.equal(ab[0], Math.trunc(32767 * Math.sin(th * DEG)));   // sine encoding, Int16 x 32767
+    assert.ok(ab[nb - 1] < 0 && ab[nb - 1] > -32767, 'descending at the end of a lob: ' + ab[nb - 1]);
   }
   for (let idx = 0; idx < t.trajs.length; idx += 997) assert.equal(t.angs[idx].length, t.lens[idx]);
 });

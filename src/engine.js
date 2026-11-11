@@ -384,8 +384,9 @@
    *   monoIdx  = first index from which rho never decreases again (backspin can pull steep lobs back)
    *   preMaxRho = max rho over [0, monoIdx]
    * lim = {tMax, rhoMax, zStop} (truncation, SPEC 4); defaults are the table limits.
-   * abuf (optional Int16Array, length >= MAX_SAMPLES, #12): flight-path angle atan2(vz, vx) of every stored sample in 0.01 deg
-   * (abuf[n] belongs to buf[2n], buf[2n+1]; abuf[0] = launch angle). Exact velocity direction, not derived from rounded positions.
+   * abuf (optional Int16Array, length >= MAX_SAMPLES, #12): SINE of the flight-path angle, 32767 * vz / |v| truncated toward 0 by the Int16 store (Math.round measured ~10 ms slower per table), of every stored
+   * sample (abuf[n] belongs to buf[2n], buf[2n+1]; abuf[0] = launch angle). Exact velocity direction, not derived from rounded
+   * positions; sine instead of the angle itself saves an atan2 per sample (decode: sineAngleDeg, valid for vx >= 0).
    */
   function fly(K, S0, thetaDeg, v0, buf, info, lim, abuf) {
     var th = thetaDeg * DEG;
@@ -399,7 +400,7 @@
     var maxN = (buf.length >> 1);
     var nStepsMax = Math.round(tMax / dt);
     buf[0] = 0; buf[1] = 0;
-    if (abuf) abuf[0] = Math.round(thetaDeg * 100);
+    if (abuf) abuf[0] = 32767 * Math.sin(th);
     var n = 1, apexIdx = 0, apexZ = 0, step = 0;
     var V, Sr, kl, a1x, a1z, a2x, a2z, a3x, a3z, a4x, a4z, vx2, vz2, vx3, vz3, vx4, vz4;
     for (;;) {
@@ -424,7 +425,7 @@
         if (zm > 32767) zm = 32767; else if (zm < -32768) zm = -32768;
         if (xm > 32767) xm = 32767; else if (xm < -32768) xm = -32768;
         buf[2 * n] = xm; buf[2 * n + 1] = zm;
-        if (abuf) abuf[n] = Math.round(Math.atan2(vz, vx) / DEG * 100);
+        if (abuf) abuf[n] = 32767 * vz / Math.sqrt(vx * vx + vz * vz);   // Int16 store truncates toward 0: error < 1 LSB, sign kept
         if (zm >= apexZ) { apexZ = zm; apexIdx = n; }
         n++;
         if ((vz < 0 && z < zStop) || step >= nStepsMax || x > rhoMax || n >= maxN) break;
@@ -436,6 +437,12 @@
     for (var i = 0; i <= m; i++) if (buf[2 * i] > pm) pm = buf[2 * i];
     info[0] = n; info[1] = apexIdx; info[2] = m; info[3] = pm;
     return n;
+  }
+
+  // flight-path angle (deg, -90..90) from a (interpolated) abuf value: asin(s / 32767), clamped against rounding overshoot
+  function sineAngleDeg(s) {
+    s /= 32767;
+    return Math.asin(s > 1 ? 1 : (s < -1 ? -1 : s)) / DEG;
   }
 
   // float path for tests/drawing without quantisation (same integrator maths), SI units
@@ -495,7 +502,7 @@
         var idx = i * nV + j;
         fly(K, S0, th[i], sp[j], buf, info, undefined, abuf);
         trajs[idx] = buf.slice(0, 2 * info[0]);
-        angs[idx] = abuf.slice(0, info[0]);   // (#12) flight-path angle track, 0.01 deg
+        angs[idx] = abuf.slice(0, info[0]);   // (#12) sine of the flight-path angle, Int16 x 32767
         lens[idx] = info[0]; apex[idx] = info[1]; mono[idx] = info[2]; preMax[idx] = info[3];
         samples += info[0];
       }
@@ -894,7 +901,7 @@
    * a cheap explanatory cause. hits/causes are written at base + y.
    */
   var _out = { code: 0, k: 0, t: 0 };
-  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits, eout, A) {   // rhits: optional zero-filled rect-hit output (#3); eout: optional NaN-filled entry output (#12); A: optional angle track of P (fly abuf, 0.01 deg)
+  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits, eout, A) {   // rhits: optional zero-filled rect-hit output (#3); eout: optional NaN-filled entry output (#12); A: optional sine-of-angle track of P (fly abuf)
     var G = S.G, nY = ycs.length, y;
     var kz = cantIndex(ctx, P, n, apexIdx);
     var zLo = ctx.zBandLoMM, zHi = ctx.zBandHiMM;
@@ -966,7 +973,7 @@
           rhits[base + y] = 1;
           if (eout) {   // entry angle (deg, < 0 descending) and speed (m/s) of the candidate-crossing segment, same formula as classifyCore
             var eR = P[2 * kk] - P[2 * kk - 2], eZ = P[2 * kk + 1] - P[2 * kk - 1], ei = 2 * (base + y);
-            eout[ei] = A ? (A[kk - 1] + t * (A[kk] - A[kk - 1])) / 100 : Math.atan2(eZ, eR) / DEG;   // exact: angle track interpolated at the crossing fraction t
+            eout[ei] = A ? sineAngleDeg(A[kk - 1] + t * (A[kk] - A[kk - 1])) : Math.atan2(eZ, eR) / DEG;   // exact: angle track interpolated at the crossing fraction t
             eout[ei + 1] = Math.sqrt(eR * eR + eZ * eZ) / 1000 / (TBL.dt * TBL.storeEvery);
           }
         }
@@ -1297,7 +1304,7 @@
           if (insidePentagon(bw[0], bw[2])) {
             tTo = (i - 1 + tc) * TBL.dt * TBL.storeEvery;
             vIn = Math.hypot(P[2 * i] - P[2 * i - 2], P[2 * i + 1] - P[2 * i - 1]) / 1000 / (TBL.dt * TBL.storeEvery);
-            aIn = (A[i - 1] + tc * (A[i] - A[i - 1])) / 100;   // < 0 descending (#12); exact flight-path angle interpolated at the crossing
+            aIn = sineAngleDeg(A[i - 1] + tc * (A[i] - A[i - 1]));   // < 0 descending (#12); exact flight-path angle interpolated at the crossing
           }
         }
       }
