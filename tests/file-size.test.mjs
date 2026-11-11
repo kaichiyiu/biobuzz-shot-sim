@@ -36,7 +36,7 @@ const UI = [
   'tests/calib-core.test.mjs', 'tests/calib-plan.test.mjs', 'tests/calib-fit.test.mjs', 'tests/calib-io.test.mjs', 'tests/calib-validate.test.mjs',
   'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',
   // tolerance UI (issue #7, I6)
-  'src/ui-tolerance.js', 'src/ui-tolerance-panel.js', 'tests/ui-tolerance.test.mjs', 'tests/ui-results-badge.test.mjs',
+  'src/ui-tolerance.js', 'src/ui-noverdict.js', 'tests/ui-noverdict.test.mjs', 'src/ui-tolerance-panel.js', 'tests/ui-tolerance.test.mjs', 'tests/ui-results-badge.test.mjs',
   // field margin map (issue #15, J2-J3)
   'src/worker-margin.js', 'src/margin-runner.js', 'src/ui-margin-map.js', 'src/ui-margin-map-draw.js',
   'tests/worker-margin.test.mjs', 'tests/margin-runner.test.mjs', 'tests/ui-margin-map.test.mjs',
