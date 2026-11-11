@@ -1,0 +1,10 @@
+/* Host containers for extension UI modules (spin, flywheel, entry, tolerance, burst, export, calibration, config, margin map).
+   Empty hosts must not change layout: flow hosts are display:contents (no box at all) until a module mounts content. */
+.ext-host { display: contents; }
+.ext-card { display: contents; }
+/* the export / calibration card only becomes a real, full-width grid item once a module has mounted something in it */
+.ext-card:has(> .ext-host > *) { display: grid; gap: 10px; grid-column: 1 / -1; min-width: 0; }
+.ext-card > .ext-host:has(> *) { display: block; }
+/* margin-map overlay: sits over the field canvas, never takes pointer events from it */
+.ext-map { position: absolute; inset: 0; pointer-events: none; }
+.ext-map > * { pointer-events: none; }

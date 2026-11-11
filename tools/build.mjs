@@ -18,7 +18,7 @@ const engine = ENGINE_FILES.map((f) => rd('src', f)).join('\n');
 const worker = rd('src', 'worker.js');
 const units = rd('src', 'units.js');
 const app = rd('src', 'app.js');
-const css = rd('src', 'styles.css') + '\n' + rd('src', 'panel.css');
+const css = rd('src', 'styles.css') + '\n' + rd('src', 'panel.css') + '\n' + rd('src', 'ext.css');
 // UI modules (window.ShotUI.*): after units.js, before app.js
 const UI_FILES = ['ui-panels.js', 'ui-window.js', 'ui-results.js', 'ui-hood.js', 'ui-hood-error.js', 'ui-plot-axes.js', 'ui-rpm-plot.js'];
 const markup = rd('src', 'markup.html');
