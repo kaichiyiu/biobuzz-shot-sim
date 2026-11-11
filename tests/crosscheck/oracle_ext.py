@@ -8,7 +8,7 @@ Oracle extension for the fork features (mouth frame, rectangular window, hood). 
 
 Shot case (kind "shot", the default) - engine frame: inches, m/s, degrees, field-centre origin, yaw = absolute heading from +x:
   {"id": any, "mouth": {"x","y","height"}, "ball": "pollen"|"nectar", "target": "red"|"blue",
-   "hive_state": {"red": -1|1, "blue": -1|1} (default: match start), "spin": "back" (default; "top" -> B2),
+   "hive_state": {"red": -1|1, "blue": -1|1} (default: match start), "spin": "back" (default) | "top" (single wheel, S0 -> -|S0|; see oracle_ext_spin.py),
    "S0": launch spin ratio (default 1.0 = single wheel), "theta": deg, "v": m/s, "yaw": deg}
   or "shots": [{"theta","v","yaw"}, ...] (one mouth set-up, many shots -> a list of results)
   The mouth is clamped like the engine (SPEC 4/8): x, y to +-(field.half - r_ball), height to 4..29 in.
@@ -17,7 +17,7 @@ Result: {"hit", "rect_hit", "entry_angle_deg", "entry_speed", "cause", "entry_w"
   r <= B <= SH - r (B = b - b0, height above the lip in the opening's plane; W2 = width/2, SH = shoulder, data/field.json);
   entry_angle_deg = atan2(vz, vr) of the velocity at the crossing (< 0 = descending), entry_speed = |v| there (m/s);
   entry_* are null for misses. Hood case (kind "hood"): see oracle_ext_hood.py.
-Later tasks: B2 adds spin "top" (symmetric lift clamp, wrapped here, oracle.py stays untouched); C4 adds entry-rule cases.
+Later task: C4 adds entry-rule cases.
 """
 import argparse
 import json
@@ -32,6 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import oracle as O  # noqa: E402
+from oracle_ext_spin import s0_of  # noqa: E402  (also installs the symmetric lift clamp into oracle.py's flight)
 
 H_RANGE = (4.0, 29.0)
 
@@ -39,15 +40,13 @@ H_RANGE = (4.0, 29.0)
 def prep(case, field):
     """Clamp the mouth and normalise one case -> oracle.py case skeleton (no shots)."""
     ball = str(case.get('ball', 'pollen')).lower()
-    if str(case.get('spin', 'back')) != 'back':
-        raise ValueError('spin %r is not implemented yet (task B2)' % (case.get('spin'),))
     L = float(field['field']['half']) - O.BALLS[ball]['D_in'] / 2.0
     m = case.get('mouth') or {}
     x = min(L, max(-L, float(m.get('x', -12.75))))
     y = min(L, max(-L, float(m.get('y', -48.0))))
     h = min(H_RANGE[1], max(H_RANGE[0], float(m.get('height', 16.0))))
     oc = {'id': case.get('id'), 'ballId': ball, 'target': case.get('target', 'red'), 'robot': {'x': x, 'y': y},
-          'h0': h, 'S0': float(case.get('S0', 1.0)), 'mouth': {'x': x, 'y': y, 'height': h}}
+          'h0': h, 'S0': s0_of(case), 'mouth': {'x': x, 'y': y, 'height': h}}
     if case.get('hive_state'):
         oc['hiveState'] = case['hive_state']
     return oc
@@ -161,11 +160,10 @@ def selftest():
     b = classify_ext(dict(g, mouth={'x': -69.1, 'y': -48, 'height': 16}), field)
     chk('8 clamped mouth gives the same result as the explicit clamped mouth', a['hit'] == b['hit'] and a['cause'] == b['cause'])
     chk('9 a flat shot straight into the floor misses with a cause', classify_ext(dict(base, theta=1, v=3), field)['cause'] in ('short', 'floor'))
-    try:
-        classify_ext(dict(g, spin='top'), field)
-        chk('10 spin top is rejected until B2', False)
-    except ValueError:
-        chk('10 spin top is rejected until B2', True)
+    top = classify_batch([dict(base, theta=th, v=v, spin='top') for th in (55, 60, 65, 70) for v in np.arange(5.0, 10.01, 0.1)], field)
+    chk('10 spin top: runs, differs from back (sign of the lift), rect_hit implies hit', any(t['hit'] != r['hit'] for t, r in zip(top, res)) and all(t['hit'] or not t['rect_hit'] for t in top))
+    az = [float(O.accel(np.array([2.0]), np.array([0.0]), 0.0, 1.0, np.array([w]))[1][0]) for w in (-5.0, -2.0, 5.0, 2.0)]
+    chk('12 lift clamp is symmetric: w r = -5 at |v| = 2 lifts like -2 (oracle.py alone: -5), +5 like +2', az[0] == az[1] == -4.0 - O.G and az[2] == az[3] == 4.0 - O.G)
     from oracle_ext_hood import selftest as hood_selftest, centre_aim
     Hr = np.zeros((1, 40, 9), bool)                 # diagonal ridge: the centre aim must walk along it and stop at a fixed point
     for k in range(9):

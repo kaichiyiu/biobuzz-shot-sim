@@ -2,7 +2,7 @@
 //   node tests/crosscheck/compare-ext.mjs [--hood 60] [--seed 7] [--no-shots] [--tag x]      (npm run crosscheck:ext)
 // --no-shots skips the mouth and rect families (to run the slow hood family in slices); --tag x suffixes the output files.
 // Writes tests/crosscheck/out/ext[-tag]-{cases,out,probe-cases,probe-out,report}.json. Exit 1 on any non-boundary disagreement.
-// Families: mouth (200 shots, clamped mouths included), rect (300 shots), hood (fixed 2/3, adjustable 1/3; default 60 cases).
+// Families: mouth (200 shots, clamped mouths included), rect (300 shots), spin (200 topspin shots), hood (fixed 2/3, adjustable 1/3; default 60 cases).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -35,15 +35,15 @@ function engineShot(p, th, v, yaw) {   // classifyShot + the rect rule applied t
   return out;
 }
 
-function config(range, needArc) {   // random mouth set-up with its coarse result; arcs wanted unless needArc is false
+function config(range, needArc, spin) {   // random mouth set-up with its coarse result; arcs wanted unless needArc is false
   for (;;) {
     const m = { x: (rnd() - 0.5) * 2 * range, y: (rnd() - 0.5) * 2 * range, height: 2 + rnd() * 29 };
-    const p = S({ ballId: rnd() < 0.25 ? 'nectar' : 'pollen', target: pick(['red', 'blue']), mouth: m, hiveState: { red: pick([-1, 1]), blue: pick([-1, 1]) } });
+    const p = S({ ...(spin ? { shooter: { spin } } : {}), ballId: rnd() < 0.25 ? 'nectar' : 'pollen', target: pick(['red', 'blue']), mouth: m, hiveState: { red: pick([-1, 1]), blue: pick([-1, 1]) } });
     const r = E.evaluate(p, 'coarse');
     if (r.best || (!needArc && rnd() < 0.25)) return { p, m, r };
   }
 }
-const oracleCase = (c, shots, extra) => ({ kind: 'shot', mouth: c.m, ball: c.p.ballId, target: c.p.target, hive_state: c.p.hiveState, S0: E.shooterSpin(c.p.shooter), shots, ...extra });
+const oracleCase = (c, shots, extra) => ({ kind: 'shot', mouth: c.m, ball: c.p.ballId, target: c.p.target, hive_state: c.p.hiveState, S0: E.shooterSpin(c.p.shooter), spin: c.p.shooter.spin || 'back', shots, ...extra });
 function shotsFor(c, n, sp) {   // dTh deg, dV (log), dYaw deg: perturbation spans around the engine's aim; a third are wide random
   const a = c.r.best, out = [];
   for (let i = 0; i < n; i++) {
@@ -58,6 +58,7 @@ const units = [];   // { fam, c, cfg } shot families, oracle case i
 const cases = [];
 for (let k = 0; k < (noShots ? 0 : 40); k++) { const c = config(75, k % 4 === 3); units.push({ fam: 'mouth', c }); cases.push(oracleCase(c, shotsFor(c, 5, [2.5, 0.04, 3]))); }
 for (let k = 0; k < (noShots ? 0 : 10); k++) { const c = config(45, true); units.push({ fam: 'rect', c }); cases.push(oracleCase(c, shotsFor(c, 30, [3, 0.04, 6]))); }
+for (let k = 0; k < (noShots ? 0 : 20); k++) { const c = config(55, true, 'top'); units.push({ fam: 'spin', c }); cases.push(oracleCase(c, shotsFor(c, 10, [2.5, 0.04, 3]))); }
 const hoods = [], rows = [];
 for (let k = 0, tries = 0; k < nHood && tries < 4000; tries++) {
   const c = config(55, true), fixed = k % 3 !== 2;
@@ -87,8 +88,8 @@ const t0 = Date.now(), out = runOracle(cases, 'ext' + tag);
 
 // ---- compare shots. Entry numbers: the engine path stores positions in whole mm (Int16), so a 5 ms segment at the mouth (~10 mm long at
 // 2 m/s) carries up to ~2.4 mm of rounding error: tolerance = 2.4 mm / segment length, plus 1 deg / 1.5 % for sampling (instant vs segment).
-const fam = { mouth: { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }, rect: { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }, hood: { n: 0, agree: 0, boundary: 0, nonBoundary: 0 } };
-const num = { angleErrDeg: [], speedErrPct: [], over: 0, maxAngleBoundRatio: 0, maxSpeedBoundRatio: 0 }, cov = { mouth: [0, 0], rect: [0, 0] }, bad = [], pend = [];
+const fam = Object.fromEntries(['mouth', 'rect', 'spin', 'hood'].map((k) => [k, { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }]));
+const num = { angleErrDeg: [], speedErrPct: [], over: 0, maxAngleBoundRatio: 0, maxSpeedBoundRatio: 0 }, cov = { mouth: [0, 0], rect: [0, 0], spin: [0, 0] }, bad = [], pend = [];
 units.forEach((u, ci) => {
   const cm = out[ci][0].mouth, em = E.evaluate(u.c.p, 'coarse').mouth;
   if (Math.abs(cm.x - em.x) + Math.abs(cm.y - em.y) + Math.abs(cm.height - em.height) > 1e-9) bad.push({ fam: u.fam, kind: 'mouth clamp', engine: em, oracle: cm });
@@ -172,7 +173,7 @@ const mx = (a) => (a.length ? +Math.max(...a).toFixed(3) : null);
 const tot = (k) => Object.values(fam).reduce((s, f) => s + f[k], 0);
 const report = { n: tot('n'), agree: tot('agree'), boundary: tot('boundary'), nonBoundary: bad, families: fam,
   agreementPct: Object.fromEntries(Object.entries(fam).map(([k, f]) => [k, f.n ? +(100 * f.agree / f.n).toFixed(2) : null])),
-  agreedHits: { mouth: { hit: cov.mouth[0], rect: cov.mouth[1] }, rect: { hit: cov.rect[0], rect: cov.rect[1] } },
+  agreedHits: Object.fromEntries(Object.entries(cov).map(([k, c]) => [k, { hit: c[0], rect: c[1] }])),
   entry: { n: num.angleErrDeg.length, maxAngleErrDeg: mx(num.angleErrDeg), maxSpeedErrPct: mx(num.speedErrPct), outsideBound: num.over,
     maxAngleErrOverBound: +num.maxAngleBoundRatio.toFixed(3), maxSpeedErrOverBound: +num.maxSpeedBoundRatio.toFixed(3) }, hoodCases: hoods.length, hoodRows: rows, seconds: (Date.now() - t0) / 1000 };
 fs.writeFileSync(path.join(OUT, 'ext' + tag + '-report.json'), JSON.stringify(report, null, 1));
