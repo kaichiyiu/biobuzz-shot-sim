@@ -77,3 +77,65 @@ test('fine view carries entry with the same NaN rule; grid cache returns the sam
   E.evaluate(BASE, 'coarse');
   assert.equal(I.getGrid(s.p, s.table).entry, V.entry);
 });
+
+// ---- exact entry angle (#12a): fly() stores the flight-path angle, testTraj / classifyCore interpolate it at the crossing
+const DEG = Math.PI / 180;
+// float reference: angle atan2(vz, vx) of flyFloat (dt 0.5 ms) linearly interpolated at time t
+function refAngle(S0, th, v, t) {
+  const dt = 0.0005, o = I.flyFloat('pollen', S0, th, v, { dt, tEnd: t + 0.01 }), f = t / dt, i0 = Math.floor(f), fr = f - i0;
+  const an = (q) => Math.atan2(q[3], q[2]) / DEG;
+  return an(o[i0]) * (1 - fr) + an(o[i0 + 1]) * fr;
+}
+function rectCells(view) { const l = []; for (let i = 0; i < view.hits.length; i++) if (view.rectHits[i]) l.push(i); return l; }
+
+test('engine entry angle vs float reference (dt 0.5 ms at tToCell): <= 0.1 deg, no sign errors, 3 spots', () => {
+  let total = 0, slow = 0, zero = 0;
+  for (const [x, y] of [[-12.75, -48], [-60, -60], [24, -60]]) {
+    const q = setup({ ...BASE, robot: { x, y } }), rc = rectCells(q.view), rand = rng(x * 7 + y);
+    const bySpeed = rc.slice().sort((i, j) => q.view.entry[2 * i + 1] - q.view.entry[2 * j + 1]).slice(0, 60);   // the slowest entries are the hard ones
+    const sample = [...new Set([...bySpeed, ...pick(rc, 60, rand)])];
+    assert.ok(sample.length >= 70, `spot ${x},${y}: ${sample.length} cells`);
+    for (const i of sample) {
+      const k = cell(q.view, i), r = I.classifyCore(q.p, q.grid.ctx, q.table.K, q.table.S0, k.th, k.v, k.yaw);
+      assert.ok(r.rectHit && r.tToCell > 0, 'cell ' + i);
+      const ref = refAngle(q.table.S0, k.th, k.v, r.tToCell);
+      for (const [what, a] of [['classifyCore', r.entryAngleDeg], ['view.entry', q.view.entry[2 * i]]]) {
+        assert.ok(Math.abs(a - ref) <= 0.1, `${what} ${a} vs ${ref} (${x},${y} cell ${i}, ${q.view.entry[2 * i + 1].toFixed(2)} m/s)`);
+        if (ref < -0.05) assert.ok(a < 0, `${what} sign: ${a} vs true ${ref}`);
+        if (ref > 0.05) assert.ok(a > 0, `${what} sign: ${a} vs true ${ref}`);
+      }
+      total++; if (q.view.entry[2 * i + 1] < 2.5) slow++; if (r.entryAngleDeg === 0) zero++;
+    }
+  }
+  assert.ok(total >= 200, 'cells compared: ' + total);
+  assert.ok(slow >= 30, 'slow entries included: ' + slow);
+  assert.equal(zero, 0, 'no cell collapses to exactly 0.0 deg any more');
+});
+
+test("'descending' at BASE: no angle is exactly 0, more cells pass than with the segment formula, no rising cell passes", () => {
+  const X = I.ext('entry'), fine = I.fineStage(s.p, s.table, s.grid, I.selectAim(V, s.p, s.mo, s.sh, s.bp, false), s.mo, s.sh, s.bp).view;
+  const rc = rectCells(fine), fd = X.filterView(fine, { rule: 'descending' }), sm = X.summary(fd.unfiltered, fd);
+  assert.equal(rc.length, 6061);
+  assert.equal(rc.filter((i) => fine.entry[2 * i] === 0).length, 0);
+  assert.ok(sm.kept > 5085 + 300, `descending kept ${sm.kept} (segment formula: 5085 of 6061, 776 exact zeros)`);
+  const nearZero = rc.filter((i) => Math.abs(fine.entry[2 * i]) < 6), rand = rng(3);
+  for (const i of pick(nearZero, 150, rand)) {
+    const k = cell(fine, i), r = I.classifyCore(s.p, s.grid.ctx, s.table.K, s.table.S0, k.th, k.v, k.yaw);
+    const ref = refAngle(s.table.S0, k.th, k.v, r.tToCell), kept = fd.rectHits[i] === 1;
+    if (kept) assert.ok(ref < 0.1, `rising cell admitted: true ${ref}`);        // never admits a rising cell
+    else assert.ok(ref > -0.1, `descending cell dropped: true ${ref}`);          // no false drop beyond the 0.1 deg tolerance
+  }
+});
+
+test('abuf is optional and does not change the path: fly() with and without it gives identical positions', () => {
+  const t = s.table, a = new Int16Array(2 * 400), b = new Int16Array(2 * 400), ab = new Int16Array(400), ia = new Int32Array(4), ib = new Int32Array(4);
+  for (const [th, v] of [[55, 6], [20, 3.2], [80, 1.4]]) {
+    const na = I.fly(t.K, t.S0, th, v, a, ia), nb = I.fly(t.K, t.S0, th, v, b, ib, undefined, ab);
+    assert.equal(na, nb);
+    assert.deepEqual(a.slice(0, 2 * na), b.slice(0, 2 * nb));
+    assert.deepEqual(Array.from(ia), Array.from(ib));
+    assert.equal(ab[0], Math.round(th * 100));
+    assert.ok(ab[nb - 1] < 0 && ab[nb - 1] > -9000, 'descending at the end of a lob: ' + ab[nb - 1]);
+  }
+  for (let idx = 0; idx < t.trajs.length; idx += 997) assert.equal(t.angs[idx].length, t.lens[idx]);
+});
