@@ -96,6 +96,8 @@
     var di = sec(src.display, 'display'), en = sec(src.entry, 'entry'), hv = sec(fi.hive, 'field.hive');
     var addOns = ['none'].concat(ids(SH.addOns).filter(function (i) { return i !== 'hubShaft'; }));
     var eS = M.etaSingleRange || [0.3, 0.5], eD = M.etaDualRange || [0.8, 0.95], bR = M.batteryRangeV || [11, 13.5];
+    // a calibrated eta may lie outside the slider range: then only the engine's own bounds (shooterNorm) apply
+    if (isObj(src.calibration) && src.calibration.calibrated === true) { eS = [0.01, 1]; eD = [0.01, 1.5]; }
     var hive = function (k) { return pick(hv[k], [-1, 1], fd.hive[k], 'field.hive.' + k); };
     var hmin = num(ho.minDeg, 1, 89, hd.minDeg, 'robot.hood.minDeg'), hmax = num(ho.maxDeg, 1, 89, hd.maxDeg, 'robot.hood.maxDeg');
 
