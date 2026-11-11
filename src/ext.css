@@ -45,6 +45,7 @@
 .verdict-badge.v-neutral { color: var(--ink); background: var(--panel-2, color-mix(in srgb, var(--ink) 8%, transparent)); }
 .ctl:has(> #precHelp) { display: none; }   /* Robot precision only fed the hit-rate model, which is no longer shown */
 .motors table :is(th, td):nth-child(n+7) { display: none; }
+#motorReadout > div:nth-child(5):not(.wide) { display: none; }   /* 'Speed scatter' row (5th of 6): it fed the removed hit-rate model, its precision input is hidden */
 /* field margin map (ui-margin-map): toolbar controls, tooltip, legend swatch; the legacy coarse Verdict map is hidden once the module has loaded (no verdicts) */
 .mm-bar { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mm-colour { font: 500 13px/1.2 var(--cond); color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
