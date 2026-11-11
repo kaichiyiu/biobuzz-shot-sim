@@ -63,3 +63,17 @@ test('applying the fitted eta moves the motor rpm for a given exit speed by old 
   const cal = C.motorRpmFromExitSpeed(v, C.shooterOf(E, { ...cfg, robot: { shooter: { ...SH, etaSingle: fit.eta.single } } }).sh);
   assert.ok(Math.abs(cal / old - 0.45 / fit.eta.single) < 1e-6);
 });
+
+test('Clear restores the manual eta stored at Apply (only while the eta still sits at the applied value); older records keep today\'s behaviour', () => {
+  const fit = { eta: { single: 0.38 }, mode: 'single', factor: 0.38, rows: [] };
+  const prev = R.manualBefore(null, { type: 'single', etaSingle: 0.45 }, 'etaSingle');
+  assert.deepEqual(prev, { key: 'etaSingle', value: 0.45 });
+  const rec = R.makeRecord(fit, [], {}, null, 0, prev);
+  assert.deepEqual(rec.previousManual, { key: 'etaSingle', value: 0.45 });
+  assert.deepEqual(R.restoreOf(rec, { type: 'single', etaSingle: 0.38 }), { key: 'etaSingle', value: 0.45 });
+  assert.equal(R.restoreOf(rec, { type: 'single', etaSingle: 0.41 }), null);          // moved by hand since: that value is the manual one
+  assert.equal(R.restoreOf(R.makeRecord(fit, [], {}, null, 0), { type: 'single', etaSingle: 0.38 }), null);   // older record
+  // re-applying while still calibrated keeps the original manual value; after a hand edit the current value is the new manual one
+  assert.deepEqual(R.manualBefore(rec, { type: 'single', etaSingle: 0.38 }, 'etaSingle'), { key: 'etaSingle', value: 0.45 });
+  assert.deepEqual(R.manualBefore(rec, { type: 'single', etaSingle: 0.41 }, 'etaSingle'), { key: 'etaSingle', value: 0.41 });
+});

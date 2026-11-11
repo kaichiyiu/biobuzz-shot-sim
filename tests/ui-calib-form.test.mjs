@@ -79,3 +79,15 @@ test('CSV export of the form rows imports back to the same rows', () => {
   assert.deepEqual(r.errors, []);
   assert.deepEqual(r.rows, rows);
 });
+
+test('repredict refills the plan predictions of a reloaded grid exactly as CalibPlan.plan computed them', () => {
+  const C = req(path.join(ROOT, 'src', 'calib-core.js'));
+  const cfg = { field: { ballId: 'pollen', h0: 16 }, robot: { shooter: { ...BASE.shooter, type: 'single', etaSingle: 0.45 } } };
+  const pl = P.plan(cfg, [2000, 2800], [55], { engine: E });
+  const fresh = G.makeGrid(pl.settings);
+  const reloaded = G.fromRows(G.toRows(fresh.map((g) => ({ ...g, rpm: '2000', shots: ['100', '', '', '', ''] })), env()), fresh.map((g) => ({ ...g, predictedIn: null })), env());
+  reloaded.forEach((g) => assert.equal(g.predictedIn, null));
+  G.repredict(reloaded, { Core: C, engine: E, cfg, ballId: 'pollen', h0In: 16 });
+  assert.deepEqual(reloaded.map((g) => g.predictedIn), fresh.map((g) => g.predictedIn));
+  assert.ok(reloaded.every((g) => g.predictedIn > 0));
+});

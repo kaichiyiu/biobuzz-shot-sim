@@ -9,8 +9,21 @@
   function stripTag(t) { return String(t).replace(/ \((manual|calibrated)[^)]*\)$/, ''); }
   function appliedOf(fit) { return fit.eta && fit.eta.dual != null ? { key: 'etaDual', value: round4(fit.eta.dual) } : { key: 'etaSingle', value: round4(fit.eta && fit.eta.single) }; }
   function round4(x) { return Math.round(x * 1e4) / 1e4; }
-  function makeRecord(fit, raw, setpoints, offsetDeg, now) {
-    return { calibrated: true, date: new Date(now == null ? Date.now() : now).toISOString(), mode: fit.mode, applied: appliedOf(fit), fit: fit, raw: raw, setpoints: setpoints || {}, angleOffsetDeg: offsetDeg == null ? null : offsetDeg };
+  function makeRecord(fit, raw, setpoints, offsetDeg, now, previousManual) {
+    var rec = { calibrated: true, date: new Date(now == null ? Date.now() : now).toISOString(), mode: fit.mode, applied: appliedOf(fit), fit: fit, raw: raw, setpoints: setpoints || {}, angleOffsetDeg: offsetDeg == null ? null : offsetDeg };
+    if (previousManual) rec.previousManual = previousManual;
+    return rec;
+  }
+  // the manual eta that Apply replaces: kept from the record while it is still in force unchanged, else the current value
+  function manualBefore(record, shooter, key) {
+    var p = record && record.previousManual;
+    if (p && p.key === key && etaStatus(record, shooter) === 'calibrated') return { key: p.key, value: p.value };
+    return { key: key, value: shooter[key] };
+  }
+  // what Clear puts back: the stored manual eta, only while the eta still sits at the applied value (a hand edit since then is the manual value); else null
+  function restoreOf(record, shooter) {
+    var p = record && record.previousManual;
+    return p && isFinite(p.value) && etaStatus(record, shooter) === 'calibrated' && p.key === record.applied.key ? { key: p.key, value: p.value } : null;
   }
   // slider bounds that include the stored value (the app resets them to its usual range on every sync)
   function wideRange(min, max, val) { var r2 = function (x) { return Math.round(x * 100) / 100; }; return [Math.min(min, r2(Math.floor(val / STEP + 1e-9) * STEP)), Math.max(max, r2(Math.ceil(val / STEP - 1e-9) * STEP))]; }
@@ -29,7 +42,7 @@
     });
   }
 
-  var api = { appliedOf: appliedOf, makeRecord: makeRecord, wideRange: wideRange, etaStatus: etaStatus, rowCells: rowCells, stripTag: stripTag };
+  var api = { appliedOf: appliedOf, makeRecord: makeRecord, manualBefore: manualBefore, restoreOf: restoreOf, wideRange: wideRange, etaStatus: etaStatus, rowCells: rowCells, stripTag: stripTag };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
 
   var UI = root.ShotUI = root.ShotUI || {}, G = UI.calibGrid, el = G.el;
@@ -67,13 +80,20 @@
 
   function apply() {
     if (!last) return;
-    record = api.makeRecord(last, run0.raw, run0.setpoints, run0.offset);
+    var a0 = api.appliedOf(last), prev = api.manualBefore(record, ctx.state.shooter, a0.key);
+    record = api.makeRecord(last, run0.raw, run0.setpoints, run0.offset, undefined, prev);
     var a = record.applied;
     ctx.state.shooter[a.key] = a.value;
     say('Applied ' + a.key + ' = ' + a.value + '. Every rpm in the tool now uses it.');
     ctx.recalc();
   }
-  function clear() { record = null; say('Calibration cleared. The eta value stays; it is manual again.'); ctx.recalc(); }
+  function clear() {
+    var back = api.restoreOf(record, ctx.state.shooter);
+    if (back) ctx.state.shooter[back.key] = back.value;
+    record = null;
+    say(back ? 'Calibration cleared. Your earlier manual eta (' + back.value + ') is back.' : 'Calibration cleared. The eta value stays; it is manual again.');
+    ctx.recalc();
+  }
 
   // eta slider + badge: runs after the app's syncControls (which resets min / max / labels)
   function syncEta() {
@@ -121,6 +141,7 @@
       get: function () { return record; },
       set: function (v) {
         record = v && v.calibrated ? v : null;
+        if (record && record.fit) { last = record.fit; run0 = { raw: record.raw, setpoints: record.setpoints, offset: record.angleOffsetDeg }; mode = record.mode === 'perRpm' ? 'perRpm' : 'single'; if (els.box) draw(); }
         if (record && UI.calibForm) UI.calibForm.load(record.raw, record.setpoints, record.angleOffsetDeg);
         if (ctx) syncEta();
       }

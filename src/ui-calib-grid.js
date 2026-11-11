@@ -39,6 +39,17 @@
     });
   }
 
+  // predicted landing (inches, 0.1 steps, null = never lands) for every row with a setpoint, same calls as CalibPlan.plan; o = { Core, engine, cfg, wheels, ballId, h0In }
+  function repredict(grid, o) {
+    var so = o.Core.shooterOf(o.engine, o.cfg, { wheels: o.wheels });
+    grid.forEach(function (g) {
+      if (g.setpointRpm == null) return;
+      var d = o.Core.landingIn(o.engine, g.ballId || o.ballId, so.S0, g.hoodDeg, o.Core.exitSpeedFromMotorRpm(g.setpointRpm, so.sh), g.h0In || o.h0In);
+      g.predictedIn = isFinite(d) ? Math.round(d * 10) / 10 : null;
+    });
+    return grid;
+  }
+
   // env = { ballId, h0In, units, U: ShotUnits }. Rows with neither rpm nor shots are dropped; unparseable cells are dropped here and reported by messages().
   function toRows(grid, env) {
     var out = [];
@@ -89,7 +100,7 @@
     return n >= SHOTS && !messages(grid, env, V).some(function (m) { return m.level === 'error'; });
   }
 
-  var api = { SHOTS: SHOTS, el: el, num: num, cfgOf: cfgOf, rangeOf: rangeOf, hoodDegsOf: hoodDegsOf, makeGrid: makeGrid, toRows: toRows, fromRows: fromRows, convert: convert, messages: messages, ready: ready };
+  var api = { SHOTS: SHOTS, el: el, num: num, cfgOf: cfgOf, rangeOf: rangeOf, hoodDegsOf: hoodDegsOf, makeGrid: makeGrid, repredict: repredict, toRows: toRows, fromRows: fromRows, convert: convert, messages: messages, ready: ready };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
   root.ShotUI = root.ShotUI || {};
   root.ShotUI.calibGrid = api;

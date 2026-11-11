@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   var UI = root.ShotUI = root.ShotUI || {}, G = UI.calibGrid, el = G.el;
-  var ctx = null, grid = [], units = 'imperial', offset = null, planInfo = null, spinOf = null, els = {}, mounted = false;
+  var ctx = null, grid = [], units = 'imperial', offset = null, planInfo = null, spinOf = null, els = {}, mounted = false, needPredict = false;
 
   function env() { return { ballId: ctx.state.ballId, h0In: ctx.state.h0, units: ctx.state.units, U: ctx.units }; }
   function cfg() { return G.cfgOf(ctx.state, spinOf ? spinOf() : 'back'); }
@@ -126,7 +126,7 @@
     load: function (rows, setpoints, off) {
       if (!ctx) return;
       var old = Object.keys(setpoints || {}).map(function (k) { return { settingId: k, setpointRpm: setpoints[k] }; });
-      grid = G.fromRows(rows || [], old, env()); offset = off == null ? null : off; units = ctx.state.units; draw();
+      grid = G.fromRows(rows || [], old, env()); offset = off == null ? null : off; units = ctx.state.units; needPredict = true; draw();   // predictions are not stored: recomputed at the next result
     }
   };
   UI.hooks = (UI.hooks || []).concat([{
@@ -142,6 +142,14 @@
       if (!mounted || state.units === units) return;
       G.convert(grid, units, state.units, ctx.units); units = state.units; draw();
     },
-    onResult: function (r) { if (mounted && r) fillRange(r); }
+    onResult: function (r) {
+      if (!mounted || !r) return;
+      if (needPredict) {   // after load(): the state is hydrated, the engine has run - recompute what the plan showed
+        needPredict = false;
+        try { G.repredict(grid, { Core: root.CalibCore, engine: ctx.engine, cfg: cfg(), wheels: wheels(), ballId: ctx.state.ballId, h0In: ctx.state.h0 }); } catch (e) { /* predictions stay '-' */ }
+        draw();
+      }
+      fillRange(r);
+    }
   }]);
 })(typeof window !== 'undefined' ? window : {});
