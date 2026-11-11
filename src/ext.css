@@ -8,3 +8,8 @@
 /* margin-map overlay: sits over the field canvas, never takes pointer events from it */
 .ext-map { position: absolute; inset: 0; pointer-events: none; }
 .ext-map > * { pointer-events: none; }
+/* config bar (ui-config): small buttons in the top bar */
+.cfg-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cfg-bar .btn { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+.cfg-msg { font: 500 12px/1.2 var(--mono); color: var(--ink-2); max-width: 26ch; }
+.cfg-msg:empty { display: none; }
