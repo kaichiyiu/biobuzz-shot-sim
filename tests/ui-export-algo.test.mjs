@@ -60,6 +60,15 @@ test('compareCells / checkCells / summary: strings in display units, bad flags, 
   const s = A.summary(list); assert.deepEqual([s.n, s.inside, s.outside, s.noWindow], [5, 1, 1, 3]); assert.match(s.text, /^1 of 5 points/);
 });
 
+test('summary hint (F7): points outside the window suggest a 2 in export step; all inside or already at 2 in do not', () => {
+  const pt = (inWindow, reachable = true) => ({ reachable, inWindow });
+  const all = A.summary([pt(true), pt(true)], 4), one = A.summary([pt(true), pt(false)], 4), none = A.summary([pt(true), pt(false, false)], 4);
+  assert.doesNotMatch(all.text, /2 in/); assert.match(one.text, /1 outside it\. Interpolating between rows is the weak spot: export with a 2 in step/); assert.match(none.text, /2 in step/);
+  assert.match(A.summary([pt(false)]).text, /2 in step/);   // unknown step: still suggested
+  assert.match(A.summary([pt(false)], 2).text, /already the finest \(2 in\)/); assert.doesNotMatch(A.summary([pt(false)], 2).text, /export with a 2 in step/);
+  assert.match(A.summary([pt(false)], 3).text, /export with a 2 in step/);
+});
+
 test('midpointQs: one point halfway between each pair of neighbouring table rows (half-step grid minus the table grid), inside the reachable range', () => {
   const qs = A.midpointQs(E, P, rows, prep.c), ds = qs.map((q) => q.d + prep.c.mouthForwardIn), reach = rows.filter((r) => r.reachable).map((r) => r.dRobotIn);
   assert.ok(qs.length >= 9, String(qs.length));

@@ -1,6 +1,6 @@
 /* BIOBUZZ Shot Sim - #4 "On-robot algorithm" section under the export table (G4). Browser: window.ShotUI.exportAlgo (+ hook). Node: module.exports (pure helpers).
    Pure: prepare(rows, params, E, etaCurve?) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params) (H2, derivation .tex)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
-         summary(list) -> {n, inside, outside, noWindow, text}   midpointQs(E, params, rows, c) -> mouth points between the table rows   runChecks(E, params, c, qs, {etaCurve, schedule, onPoint, onDone}) -> {cancel}
+         summary(list, stepIn?) -> {n, inside, outside, noWindow, text}   (P1-F7: a point not inside adds the 2 in step hint)   midpointQs(E, params, rows, c) -> mouth points between the table rows   runChecks(E, params, c, qs, {etaCurve, schedule, onPoint, onDone}) -> {cancel}
    Browser: setTable({rows, params, cfg, etaCurve, ready}) is called by ui-export.js when a table is finished; the section lives in a child div of #exportHost.
    Design: process_docs/issue-4/design.md section 14. */
 (function (root) {
@@ -50,10 +50,11 @@
       };
     });
   }
-  function summary(list) {
+  var HINT_STEP = ' Interpolating between rows is the weak spot: export with a 2 in step (rows closer together; the review measured every point between rows inside the window at 2 in) to bring them inside.';
+  function summary(list, stepIn) {
     var n = list.length, inside = 0, out = 0, none = 0;
     list.forEach(function (o) { if (o.reachable && o.inWindow) inside++; else if (o.reachable) out++; else none++; });
-    return { n: n, inside: inside, outside: out, noWindow: none, text: inside + ' of ' + n + ' points between the rows are inside the scoring window at the algorithm\'s own angle' + (out ? ', ' + out + ' outside it' : '') + (none ? ', ' + none + ' with no window (that angle cannot score from there)' : '') + '.' };
+    return { n: n, inside: inside, outside: out, noWindow: none, text: inside + ' of ' + n + ' points between the rows are inside the scoring window at the algorithm\'s own angle' + (out ? ', ' + out + ' outside it' : '') + (none ? ', ' + none + ' with no window (that angle cannot score from there)' : '') + '.' + (out + none === 0 ? '' : stepIn <= 2.0001 ? ' The export step is already the finest (2 in).' : HINT_STEP) };
   }
 
   // mouth points halfway between the table rows (the half-step grid minus the table grid), strictly inside the reachable range
@@ -135,7 +136,7 @@
       onDone: function (list, cancelled) {
         if (job !== mine) return;
         job = null; N.prog.hidden = true; results = list; render();
-        say((cancelled ? 'Cancelled after ' + list.length + ' points. ' : '') + summary(list).text);
+        say((cancelled ? 'Cancelled after ' + list.length + ' points. ' : '') + summary(list, data.rows.length > 1 ? data.rows[1].dMouthIn - data.rows[0].dMouthIn : undefined).text);
       }
     });
     render();
