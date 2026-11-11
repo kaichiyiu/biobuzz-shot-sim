@@ -400,16 +400,16 @@
     var n = 1, apexIdx = 0, apexZ = 0, step = 0;
     var V, Sr, kl, a1x, a1z, a2x, a2z, a3x, a3z, a4x, a4z, vx2, vz2, vx3, vz3, vx4, vz4;
     for (;;) {
-      V = Math.sqrt(vx * vx + vz * vz); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx * vx + vz * vz); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a1x = -kd * V * vx - kl * V * vz; a1z = -g - kd * V * vz + kl * V * vx;
       vx2 = vx + h2 * a1x; vz2 = vz + h2 * a1z;
-      V = Math.sqrt(vx2 * vx2 + vz2 * vz2); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx2 * vx2 + vz2 * vz2); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a2x = -kd * V * vx2 - kl * V * vz2; a2z = -g - kd * V * vz2 + kl * V * vx2;
       vx3 = vx + h2 * a2x; vz3 = vz + h2 * a2z;
-      V = Math.sqrt(vx3 * vx3 + vz3 * vz3); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx3 * vx3 + vz3 * vz3); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a3x = -kd * V * vx3 - kl * V * vz3; a3z = -g - kd * V * vz3 + kl * V * vx3;
       vx4 = vx + dt * a3x; vz4 = vz + dt * a3z;
-      V = Math.sqrt(vx4 * vx4 + vz4 * vz4); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx4 * vx4 + vz4 * vz4); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a4x = -kd * V * vx4 - kl * V * vz4; a4z = -g - kd * V * vz4 + kl * V * vx4;
       x += h6 * (vx + 2 * vx2 + 2 * vx3 + vx4);
       z += h6 * (vz + 2 * vz2 + 2 * vz3 + vz4);
@@ -442,7 +442,7 @@
     var dt = num(opts.dt, TBL.dt), tEnd = num(opts.tEnd, 1.0);
     var th = thetaDeg * DEG, x = 0, z = 0, vx = v0 * Math.cos(th), vz = v0 * Math.sin(th), wr = S0 * v0;
     function acc(ux, uz) {
-      var V = Math.sqrt(ux * ux + uz * uz), Sr = V > 1e-9 ? wr / V : 0; if (Sr > K.smax) Sr = K.smax;
+      var V = Math.sqrt(ux * ux + uz * uz), Sr = V > 1e-9 ? wr / V : 0; if (Sr > K.smax) Sr = K.smax; else if (Sr < -K.smax) Sr = -K.smax;
       var kl = K.kl0 * Sr;
       return [-K.kd * V * ux - kl * V * uz, -K.g - K.kd * V * uz + kl * V * ux];
     }
@@ -534,14 +534,15 @@
       etaSingle: clamp(num(sh.etaSingle, S.model.etaSingle), 0.01, 1),
       etaDual: clamp(num(sh.etaDual, S.model.etaDual), 0.01, 1.5),
       batteryV: clamp(num(sh.batteryV, S.model.batteryV), 9, 15),
-      control: sh.control === 'power' ? 'power' : 'pid'
+      control: sh.control === 'power' ? 'power' : 'pid',
+      spin: sh.type !== 'dual' && sh.spin === 'top' ? 'top' : 'back'
     };
   }
 
   function shooterSpin(shooter) {
     var sh = shooterNorm(shooter);
     if (sh.type === 'dual') return (1 - sh.topRatio) / (1 + sh.topRatio);
-    return 1;
+    return sh.spin === 'top' ? -1 : 1;
   }
 
   function defaultMotorId() {
