@@ -28,6 +28,7 @@ const UI = [
   'tests/export-row.test.mjs', 'tests/export-bearing.test.mjs', 'tests/worker-export.test.mjs', 'tests/export-format.test.mjs', 'tests/export-runner.test.mjs', 'tests/ui-export.test.mjs', 'tests/ui-accuracy.test.mjs',
   // on-robot solver (issue #4, G1-G5)
   'src/export-solver.js', 'src/export-java.js', 'src/export-compare.js', 'src/ui-export-algo.js', 'src/templates/ShotSolver.java.txt',
+  'src/export-tex.js', 'src/templates/derivation.tex.txt', 'tests/export-tex.test.mjs',
   'tests/export-solver.test.mjs', 'tests/export-java.test.mjs', 'tests/export-compare.test.mjs', 'tests/java-port.test.mjs', 'tests/ui-export-algo.test.mjs',
   'tests/calib-core.test.mjs', 'tests/calib-plan.test.mjs', 'tests/calib-fit.test.mjs', 'tests/calib-io.test.mjs', 'tests/calib-validate.test.mjs',
   'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',

@@ -26,6 +26,13 @@ test('javaText: rendered class has no placeholder left; a missing template is an
   assert.throws(() => A.javaText(prep.c, undefined), /not loaded/); assert.throws(() => A.javaText(prep.c, ''), /not loaded/);
 });
 
+test('texText: derivation filled from the constants, config and the page params\' wheel diameter; a missing template is an error', () => {
+  const t = fs.readFileSync(path.join(ROOT, 'src', 'templates', 'derivation.tex.txt'), 'utf8'), out = A.texText(prep.c, { field: { ballId: 'pollen' }, robot: { motorId: 'yj6000', shooter: { type: 'single', gear: 1, etaSingle: 0.62 } } }, t, P);
+  assert.ok(!out.includes('{{') && out.includes('\\begin{document}') && out.includes('$D = 96$ mm') && out.includes('\\texttt{ yj6000 }'));
+  assert.throws(() => A.texText(prep.c, null, undefined, P), /not loaded/);
+  assert.ok(!A.texText(prep.c, null, t, null).includes('{{'));
+});
+
 test('vectorDistances / vectorsText: 3 in outside each end, 1 in steps inside; CSV = ExportCompare.vectorsCsv of those distances', () => {
   const reach = rows.filter((r) => r.reachable).map((r) => r.dRobotIn), lo = Math.min(...reach), hi = Math.max(...reach), d = A.vectorDistances(rows);
   assert.equal(d[0], lo - 3); assert.equal(d[1], Math.ceil(lo)); assert.equal(d[d.length - 1], hi + 3); assert.equal(d[d.length - 2], hi);

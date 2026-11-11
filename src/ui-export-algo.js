@@ -1,5 +1,5 @@
 /* BIOBUZZ Shot Sim - #4 "On-robot algorithm" section under the export table (G4). Browser: window.ShotUI.exportAlgo (+ hook). Node: module.exports (pure helpers).
-   Pure: prepare(rows, params, E) -> {c, usable, reason}   javaText(c, tpl)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
+   Pure: prepare(rows, params, E) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params) (H2, derivation .tex)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
          summary(list) -> {n, inside, outside, noWindow, text}   midpointQs(E, params, rows, c) -> mouth points between the table rows   runChecks(E, params, c, qs, {etaCurve, schedule, onPoint, onDone}) -> {cancel}
    Browser: setTable({rows, params, cfg, etaCurve, ready}) is called by ui-export.js when a table is finished; the section lives in a child div of #exportHost.
    Design: process_docs/issue-4/design.md section 14. */
@@ -7,7 +7,7 @@
   'use strict';
   var isNode = typeof module === 'object' && module.exports;
   function lib() {
-    return isNode ? { S: require('./export-solver.js'), J: require('./export-java.js'), X: require('./export-compare.js') } : { S: root.ExportSolver, J: root.ExportJava, X: root.ExportCompare };
+    return isNode ? { S: require('./export-solver.js'), J: require('./export-java.js'), X: require('./export-compare.js'), T: require('./export-tex.js') } : { S: root.ExportSolver, J: root.ExportJava, X: root.ExportCompare, T: root.ExportTex };
   }
   var FILES = { java: ['ShotSolver.java', 'text/x-java-source'], csv: ['biobuzz-solver-vectors.csv', 'text/csv'], tex: ['biobuzz-derivation.tex', 'application/x-tex'] };
 
@@ -28,6 +28,10 @@
     for (x = Math.ceil(lo); x < hi; x++) out.push(x);
     out.push(hi, hi + 3);
     return out;
+  }
+  function texText(c, cfg, tpl, params) {
+    var D = params && params.shooter && params.shooter.wheelDiameterMm;
+    return lib().T.renderTex(c, cfg || null, tpl, { wheelDiameterMm: D });
   }
   function vectorsText(c, rows) { var X = lib().X; return X.vectorsCsv(X.vectors(c, vectorDistances(rows))); }
 
@@ -80,7 +84,7 @@
     return { cancel: function () { if (dead) return; dead = true; if (o.onDone) o.onDone(out, true); } };
   }
 
-  var api = { FILES: FILES, prepare: prepare, javaText: javaText, vectorDistances: vectorDistances, vectorsText: vectorsText, compareCells: compareCells, checkCells: checkCells, summary: summary, midpointQs: midpointQs, runChecks: runChecks };
+  var api = { FILES: FILES, prepare: prepare, javaText: javaText, texText: texText, vectorDistances: vectorDistances, vectorsText: vectorsText, compareCells: compareCells, checkCells: checkCells, summary: summary, midpointQs: midpointQs, runChecks: runChecks };
   if (isNode) { module.exports = api; return; }
 
   var UI = root.ShotUI = root.ShotUI || {};
@@ -110,7 +114,7 @@
   function render() {
     if (!box) return;
     var ready = !!(data && data.ready && prep && prep.usable);
-    ['java', 'csv'].forEach(function (k) { N[k].disabled = !ready; });
+    ['java', 'csv', 'tex'].forEach(function (k) { N[k].disabled = !ready; });
     N.check.disabled = !ready && !job;
     N.check.textContent = job ? 'Cancel check' : 'Check between rows';
     if (!data || !data.ready) say('Run an export first: the algorithm is built from the finished table.');
@@ -142,12 +146,15 @@
   function build(host) {
     N.java = el('button', { type: 'button', class: 'btn', id: 'expAlgoJava', text: 'Download ShotSolver.java' });
     N.csv = el('button', { type: 'button', class: 'btn', id: 'expAlgoCsv', text: 'Download test vectors (CSV)' });
+    N.tex = el('button', { type: 'button', class: 'btn', id: 'expAlgoTex', text: 'Download derivation (.tex)' });
     N.check = el('button', { type: 'button', class: 'btn', id: 'expAlgoCheck', text: 'Check between rows' });
     N.prog = el('progress', { id: 'expAlgoProg', max: '1', value: '0', hidden: '' });
     N.msg = el('p', { class: 'calib-sum', id: 'expAlgoMsg', role: 'status' });
     N.cmp = el('table', { class: 'calib-grid', id: 'expAlgoCmp' }); N.chk = el('table', { class: 'calib-grid', id: 'expAlgoChk' });
-    N.row = el('div', { class: 'calib-row', id: 'expAlgoButtons' }, [N.java, N.csv, N.check]);
-    var w1 = el('div', { class: 'table-wrap' }, [N.cmp]), w2 = el('div', { class: 'table-wrap' }, [N.chk]);
+    N.row = el('div', { class: 'calib-row', id: 'expAlgoButtons' }, [N.java, N.csv, N.tex, N.check]);
+    var cap = function (t) { return el('p', { class: 'help', text: t }); };
+    var w1 = el('div', { class: 'table-wrap' }, [cap('Table vs algorithm at the table distances (difference = |algorithm - table| / window width)'), N.cmp]);
+    var w2 = el('div', { class: 'table-wrap' }, [cap('Between the rows: the simulator is evaluated with the hood fixed at the algorithm\'s angle; the algorithm\'s rpm must lie in that window'), N.chk]);
     w1.hidden = w2.hidden = true;
     box = el('div', { class: 'calib-sec', id: 'exportAlgo' }, [
       el('h3', { text: 'On-robot algorithm' }),
@@ -156,6 +163,7 @@
     host.appendChild(box);
     N.java.addEventListener('click', function () { onDownload('java', function () { return javaText(prep.c, root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['ShotSolver.java']); }); });
     N.csv.addEventListener('click', function () { onDownload('csv', function () { return vectorsText(prep.c, data.rows); }); });
+    N.tex.addEventListener('click', function () { onDownload('tex', function () { return texText(prep.c, data.cfg, root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['derivation.tex'], data.params); }); });
     N.check.addEventListener('click', startCheck);
     UI.exportAlgo.N = N;
   }
