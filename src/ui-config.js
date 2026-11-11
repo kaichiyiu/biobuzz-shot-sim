@@ -82,8 +82,9 @@
   function stripHash() {
     try { if (/^#cfg=/.test(root.location.hash)) root.history.replaceState(null, '', root.location.pathname + root.location.search); } catch (e) { /* sandboxed */ }
   }
-  function saveNow() {
+  function saveNow(force) {
     clearTimeout(timer); timer = 0;
+    if (force !== true && sig() === baseline) return;   // a timer armed during hydration, before the baseline existed
     stripHash();   // a copied link is a snapshot: once the user edits, a reload must use their stored config
     IO.save(current(), storage());
     baseline = sig();
@@ -91,7 +92,7 @@
   function schedule() {
     if (!ctx || sig() === baseline) return;
     clearTimeout(timer);
-    timer = setTimeout(saveNow, SAVE_MS);
+    timer = setTimeout(function () { saveNow(); }, SAVE_MS);
   }
   function say(t) { if (msg) msg.textContent = t; }
 
@@ -119,7 +120,7 @@
       var r = IO.fromJson(String(rd.result), ctx.data);
       if (!r.cfg) return say('Not a config file: ' + r.warnings[0]);
       applyCfg(r.cfg);
-      saveNow();
+      saveNow(true);
       say('Config imported' + (r.warnings.length ? ' (' + r.warnings.length + ' value' + (r.warnings.length > 1 ? 's' : '') + ' adjusted)' : ''));
     };
     rd.onerror = function () { say('Could not read the file'); };
