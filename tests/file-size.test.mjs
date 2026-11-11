@@ -9,7 +9,7 @@ const MAX = 200;
 // engine side: must exist
 const ENGINE = [
   'src/engine-rect.js', 'src/engine-hood-core.js', 'src/engine-hood.js', 'src/engine-sweep.js', 'src/engine-entry.js',
-  'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
+  'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/hood-search.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
   'tests/fixtures/make-baseline.mjs',
 ];
 // UI side (other developer): checked when present; split seams are in the plan
