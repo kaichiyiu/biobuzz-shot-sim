@@ -91,3 +91,17 @@ test('repredict refills the plan predictions of a reloaded grid exactly as Calib
   assert.deepEqual(reloaded.map((g) => g.predictedIn), fresh.map((g) => g.predictedIn));
   assert.ok(reloaded.every((g) => g.predictedIn > 0));
 });
+
+test('decimal comma: 91,5 -> 91.5, thousands 1,234 -> 1234, ambiguous commas -> NaN (grid num, shot cells, export plain)', async () => {
+  const vm = await import('node:vm'), fs = await import('node:fs');
+  const w = {}; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src', 'ui-export-panel.js'), 'utf8'), { window: w });
+  const plain = w.ShotUI.exportPanel.plain;
+  const ok = [['91,5', 91.5], ['0,25', 0.25], ['-3,5', -3.5], ['1234,5', 1234.5], ['2,010', 2010], ['12,500.5', 12500.5], ['1,234,567', 1234567], [' 37,5 ', 37.5], ['90', 90], ['91.5', 91.5]];
+  ok.forEach(([t, v]) => { assert.equal(G.num(t), v, t); assert.equal(plain(t), v, 'plain ' + t); });
+  ['1,2,3', '91,567,5', '1,2345', '12,5,5', '1,23,456', ',5', '5,', '1.234,5', 'abc'].forEach((t) => { assert.ok(Number.isNaN(G.num(t)), 'num ' + t); assert.equal(plain(t), null, 'plain ' + t); });
+  assert.ok(Number.isNaN(G.num('')));
+  const g = G.makeGrid(settings); g[0].rpm = '2010'; g[0].shots = ['91,5', '37,5', '1,2,3', '', ''];
+  assert.deepEqual(G.toRows(g, env())[0].landingIn, [91.5, 37.5]);                       // ambiguous cell dropped here ...
+  assert.ok(G.messages(g, env(), V).some((m) => m.level === 'error' && /not a number/.test(m.text)));   // ... and reported
+  assert.ok(Math.abs(G.toRows(g.map((x) => ({ ...x, shots: ['91,5', '', '', '', ''] })), env('metric'))[0].landingIn[0] - 91.5 / 2.54) < 1e-9);
+});

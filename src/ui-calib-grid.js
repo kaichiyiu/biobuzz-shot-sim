@@ -11,7 +11,14 @@
     (kids || []).forEach(function (c) { e.appendChild(c); });
     return e;
   }
-  function num(t) { var s = String(t == null ? '' : t).trim().replace(/,/g, ''); return s === '' ? NaN : Number(s); }
+  // decimal comma (91,5 -> 91.5) vs thousands comma (1,234 -> 1234); anything else with a comma is ambiguous -> 'x' (NaN). process_docs/issue-11/design.md section 9
+  function norm(t) {
+    var s = String(t == null ? '' : t).trim();
+    if (s.indexOf(',') < 0) return s;
+    if (/^-?\d+,\d{1,2}$/.test(s)) return s.replace(',', '.');
+    return /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : 'x';
+  }
+  function num(t) { var s = norm(t); return s === '' ? NaN : Number(s); }
   function r1(x) { return Math.round(x * 10) / 10; }
 
   // minimal ConfigV1 for CalibPlan / CalibFit: spin comes from the spin hook (state has none)
@@ -54,7 +61,7 @@
   function toRows(grid, env) {
     var out = [];
     grid.forEach(function (g) {
-      var shots = g.shots.map(function (t) { return env.U.parseLen(t, env.units); }).filter(function (x) { return isFinite(x); });
+      var shots = g.shots.map(function (t) { return env.U.parseLen(norm(t), env.units); }).filter(function (x) { return isFinite(x); });
       var rpm = num(g.rpm);
       if (!isFinite(rpm) && !shots.length) return;
       out.push({ settingId: g.settingId, ballId: g.ballId || env.ballId, h0In: g.h0In || env.h0In, hoodDeg: g.hoodDeg, measuredMotorRpm: rpm, landingIn: shots });
@@ -75,7 +82,7 @@
   // unit switch: re-express every shot cell
   function convert(grid, from, to, U) {
     grid.forEach(function (g) {
-      g.shots = g.shots.map(function (t) { var v = U.parseLen(t, from); return isFinite(v) ? String(r1(U.toLen(v, to))) : t; });
+      g.shots = g.shots.map(function (t) { var v = U.parseLen(norm(t), from); return isFinite(v) ? String(r1(U.toLen(v, to))) : t; });
     });
   }
 
@@ -84,7 +91,7 @@
     var out = [];
     grid.forEach(function (g, i) {
       var tag = g.settingId + ': ', cells = g.shots.filter(function (t) { return String(t).trim() !== ''; });
-      var shots = cells.map(function (t) { return env.U.parseLen(t, env.units); });
+      var shots = cells.map(function (t) { return env.U.parseLen(norm(t), env.units); });
       var rpm = num(g.rpm), good = shots.filter(function (x) { return isFinite(x); });
       if (!cells.length && !isFinite(rpm)) return;
       if (good.length < cells.length) out.push({ row: i, level: 'error', text: tag + 'a shot distance is not a number.' });
@@ -100,7 +107,7 @@
     return n >= SHOTS && !messages(grid, env, V).some(function (m) { return m.level === 'error'; });
   }
 
-  var api = { SHOTS: SHOTS, el: el, num: num, cfgOf: cfgOf, rangeOf: rangeOf, hoodDegsOf: hoodDegsOf, makeGrid: makeGrid, repredict: repredict, toRows: toRows, fromRows: fromRows, convert: convert, messages: messages, ready: ready };
+  var api = { SHOTS: SHOTS, el: el, num: num, norm: norm, cfgOf: cfgOf, rangeOf: rangeOf, hoodDegsOf: hoodDegsOf, makeGrid: makeGrid, repredict: repredict, toRows: toRows, fromRows: fromRows, convert: convert, messages: messages, ready: ready };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
   root.ShotUI = root.ShotUI || {};
   root.ShotUI.calibGrid = api;

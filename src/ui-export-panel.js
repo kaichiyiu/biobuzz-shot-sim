@@ -11,6 +11,12 @@
     (kids || []).forEach(function (c) { e.appendChild(c); });
     return e;
   }
+  // plain number from a text field: decimal comma 91,5 -> 91.5; thousands 1,234 -> 1234; other commas ambiguous -> null (process_docs/issue-11/design.md section 9)
+  function parsePlain(t) {
+    var s = String(t).trim();
+    if (s.indexOf(',') >= 0) s = /^-?\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : 'x');
+    var v = parseFloat(s); return isFinite(v) ? v : null;
+  }
   function field(label, id, w, hint) {
     var i = el('input', { type: 'text', id: id, inputmode: 'decimal', style: 'width:' + w + 'ch', 'aria-label': label });
     if (hint) i.title = hint;
@@ -56,7 +62,7 @@
         deps.set(o); ctl.sync();
       });
     }
-    function plain(t) { var v = parseFloat(String(t).replace(/,/g, '')); return isFinite(v) ? v : null; }
+    var plain = parsePlain;
     onNum(F.step.input, 'stepIn', function (t) { var u = ints(), v = u.U.parseLen(t, u.system); return isFinite(v) ? v : null; });
     onNum(F.fwd.input, 'mouthForwardIn', function (t) { var u = ints(), v = u.U.parseLen(t, u.system); return isFinite(v) ? v : 0; });
     onNum(F.ticks.input, 'ticksPerMotorRev', plain);
@@ -109,5 +115,5 @@
     ctl.sync(true);
     return ctl;
   }
-  UI.exportPanel = { mount: mount, el: el };
+  UI.exportPanel = { mount: mount, el: el, plain: parsePlain };
 })(typeof window !== 'undefined' ? window : {});
