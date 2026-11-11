@@ -2,7 +2,9 @@
    Browser: window.ShotUI.export (+ hook, ShotUI.exportRange). Node: module.exports (pure helpers). DOM panel: ui-export-panel.js.
    Config slice 'export' = { stepIn 2..12 (inch), ticksPerMotorRev number | null (null = the motor's encoderPPR), mouthForwardIn (inch), servo | null, formats }.
    Soundness (engine review): with a per-rpm eta curve the engine does not re-check the motor's usable free speed, so limitRows() marks rows whose
-   highest rpm exceeds it "over motor limit" and exports them as reachable:false (so the Java arrays skip them). Design: process_docs/issue-4/design.md section 7. */
+   highest rpm exceeds it "over motor limit" and exports them as reachable:false (so the Java arrays skip them). Design: process_docs/issue-4/design.md section 7.
+   Stale settings (P1-F3, design section 15): start() captures params, calibration record, cfg(), eta curve and the usable free rpm ONCE; the finished table, its header, the motor-limit flag and the algorithm section use only those.
+   The run is not cancelled when the simulator settings change meanwhile; isStale() (params or calibration differ at the end) labels the result "computed for the settings at start". */
 (function (root) {
   'use strict';
   var FORMATS = [['csv', 'CSV'], ['json', 'JSON'], ['java', 'Java arrays']];
@@ -46,6 +48,10 @@
     if (L.over) h.notes.push('Over motor limit: ' + L.over + ' row(s) need a highest rpm above the motor\'s usable free speed (' + Math.round(free) + ' rpm), which a per-rpm eta curve does not re-check. They are marked reachable=false (overMotorLimit in JSON) and left out of the Java arrays.');
     return { header: h, rows: L.rows };
   }
+  var STALE_NOTE = 'Computed for the settings at the start of the run: the simulator settings changed while it ran. Run the export again to get the current settings.';
+  function sigOf(x) { try { return JSON.stringify(x === undefined ? null : x); } catch (e) { return ''; } }
+  // cap = what start() captured ({p, calib}); now* = the live params / calibration record when the run ends
+  function isStale(cap, nowP, nowCalib) { return sigOf(cap.p) !== sigOf(nowP) || sigOf(cap.calib) !== sigOf(nowCalib); }
   function etaCurveOf(calib) { return calib && calib.calibrated && calib.mode === 'perRpm' && calib.fit && calib.fit.curve ? calib.fit.curve : undefined; }
   function rangeOf(rows) {
     var lo = Infinity, hi = -Infinity;
@@ -74,7 +80,7 @@
   }
 
   var api = { FORMATS: FORMATS, normSettings: normSettings, normServo: normServo, defaultTicks: defaultTicks, runSettings: runSettings, usableFreeRpm: usableFreeRpm,
-    limitRows: limitRows, buildTable: buildTable, etaCurveOf: etaCurveOf, rangeOf: rangeOf, rowCells: rowCells, textOf: textOf, FILES: FILES };
+    limitRows: limitRows, buildTable: buildTable, isStale: isStale, STALE_NOTE: STALE_NOTE, etaCurveOf: etaCurveOf, rangeOf: rangeOf, rowCells: rowCells, textOf: textOf, FILES: FILES };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
 
   var UI = root.ShotUI = root.ShotUI || {};
@@ -88,21 +94,25 @@
   function cfg() {
     try { return UI.config.collect(ctx.state, (UI.hooks || []).map(function (h) { return h.configSlice; }).filter(Boolean)); } catch (e) { return null; }
   }
-  function show(rows, done) {
-    var free = usableFreeRpm(ctx.engine, lastP), c = calib();
-    table = buildTable(cfg(), c, rows, free, root.ExportFormat);
+  // cap = the values captured by start(); the live lastP / calib / cfg are used only to decide whether the result is stale
+  function show(rows, done, cap) {
+    table = buildTable(cap.cfg, cap.calib, rows, cap.free, root.ExportFormat);
+    var stale = isStale(cap, lastP, calib());
+    if (stale) table.header.notes.push(STALE_NOTE);
     tableRows = table.rows;
     range = rangeOf(tableRows);
     panel.table(rowCells(tableRows, ctx.units, ctx.state.units), null, done && tableRows.length > 0);
-    if (UI.exportAlgo) UI.exportAlgo.setTable({ rows: tableRows, params: lastP, cfg: cfg(), etaCurve: etaCurveOf(c), ready: !!done && tableRows.length > 0 });   // G4 hook-in: the algorithm section is built from the finished table
+    if (UI.exportAlgo) UI.exportAlgo.setTable({ rows: tableRows, params: cap.p, cfg: cap.cfg, etaCurve: cap.etaCurve, ready: !!done && tableRows.length > 0 });   // G4 hook-in: the algorithm section is built from the finished table
+    return stale;
   }
   function start() {
     if (run) return;
     if (!lastP) { panel.say('No result yet. Wait for the simulator to finish its first calculation.'); return; }
     var p = lastP, c = calib(), rows = [], xs = runSettings(settings, ctx.engine, p);
+    var cap = { p: p, calib: c, cfg: cfg(), etaCurve: etaCurveOf(c), free: usableFreeRpm(ctx.engine, p) };   // P1-F3: everything the table is built from, captured now
     panel.busy(true); panel.progress(0, 1); panel.say('Running at full accuracy...');
     run = root.ExportRunner.run(p, xs, {
-      etaCurve: etaCurveOf(c),
+      etaCurve: cap.etaCurve,
       onRow: function (row, done, total) { rows.push(row); panel.progress(done, total); }
     });
     var mine = run;
@@ -110,8 +120,8 @@
       if (run !== mine) return;
       run = null; panel.busy(false);
       var cancelled = res && res.cancelled;
-      show(res, !cancelled);
-      panel.say(cancelled ? 'Cancelled after ' + res.length + ' rows. Run again for a complete table.' : res.length + ' rows (step ' + ctx.units.nf(ctx.units.toLen(xs.stepIn, ctx.state.units), 1) + ' ' + ctx.units.lenUnit(ctx.state.units) + ').');
+      var stale = show(res, !cancelled, cap);
+      panel.say((cancelled ? 'Cancelled after ' + res.length + ' rows. Run again for a complete table.' : res.length + ' rows (step ' + ctx.units.nf(ctx.units.toLen(xs.stepIn, ctx.state.units), 1) + ' ' + ctx.units.lenUnit(ctx.state.units) + ').') + (stale ? ' ' + STALE_NOTE : ''));
     }, function (err) {
       if (run !== mine) return;
       run = null; panel.busy(false); panel.say('Export failed: ' + (err && err.message ? err.message : err));
