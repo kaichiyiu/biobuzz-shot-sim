@@ -8,6 +8,7 @@
     { key: 'rpm', id: 'tolRpm', label: '± motor rpm', unit: 'rpm', step: '5' },
     { key: 'posIn', id: 'tolPos', label: '± position', unit: null, step: '0.25' }
   ];
+  var TYPE_MS = 250;   // pause after the last keystroke before the margin is recomputed
   var PRESETS = [['dialed', 'Dialed'], ['typical', 'Typical'], ['rough', 'Rough']];
   var AXIS = { angle: 'launch angle', rpm: 'motor speed', yaw: 'aim (yaw)', along: 'position along the shot line' };
   var HELP = 'How far off can your robot be? Margin 1.0× means your ± errors just fit inside the scoring window; 2× means you could be twice as sloppy. Leave all empty to see no margin.';
@@ -72,11 +73,21 @@
 
   // deps = { get(): model, units, onField(key, text), onPreset(name), onCalib(), onClear(), downgrade }
   function mount(host, deps) {
-    var inputs = {}, units = {}, say = el('p', { class: 'help tol-msg', role: 'status' }), res = el('div', { class: 'tol-res' });
+    var inputs = {}, units = {}, say = el('p', { class: 'help tol-msg', role: 'status' }), res = el('div', { class: 'tol-res' }), typing = null, timer = null, sent = {}, panel;
     var row = el('div', { class: 'tol-fields' }, FIELDS.map(function (f) {
       var inp = el('input', { type: 'number', id: f.id, step: f.step, min: '0', placeholder: '0', 'aria-label': f.label }), un = el('span', { class: 'unit', text: f.unit || '' });
       inputs[f.key] = inp; units[f.key] = un;
-      inp.addEventListener('change', function () { deps.onField(f.key, inp.value); });
+      // typing updates the margin after a short pause (the field being typed in is not rewritten); change (blur / Enter) applies at once
+      inp.addEventListener('input', function () {
+        typing = f.key; if (timer) clearTimeout(timer);
+        timer = setTimeout(function () { sent[f.key] = inp.value; deps.onField(f.key, inp.value); }, TYPE_MS);
+      });
+      inp.addEventListener('change', function () {
+        if (timer) { clearTimeout(timer); timer = null; }
+        typing = null;
+        if (sent[f.key] === inp.value) { sent[f.key] = null; panel.sync(); return; }   // already applied while typing
+        deps.onField(f.key, inp.value);
+      });
       return el('label', { class: 'tol-f' }, [el('span', { class: 'label', text: f.label }), el('span', { class: 'row' }, [inp, un])]);
     }));
     var btns = el('div', { class: 'tol-btns' }, PRESETS.map(function (p) {
@@ -94,10 +105,11 @@
     host.replaceChildren(wrap);
 
     function line(txt, cls) { if (txt) res.appendChild(el('p', { class: cls || 'tol-line', text: txt })); }
-    return {
+    panel = {
       sync: function () {
         var m = deps.get(), u = deps.units;
         FIELDS.forEach(function (f) {
+          if (f.key === typing) return;
           var v = f.key === 'posIn' ? u.toLen(m.posIn) : m[f.key];
           inputs[f.key].value = v > 0 ? String(Math.round(v * 100) / 100) : '';
         });
@@ -116,6 +128,7 @@
         line(d.best, 'tol-best');
       }
     };
+    return panel;
   }
 
   var api = { describe: describe, fmtMargin: fmtMargin, mount: mount, FIELDS: FIELDS, PRESETS: PRESETS, CAL_HINT: CAL_HINT };
