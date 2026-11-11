@@ -74,9 +74,22 @@ test('fineOpts: no tie set or a tie set inside the old reach -> the old view; ou
   assert.deepEqual(HX.fineOpts(sel({ t0: 61, t1: 69, v0: 4.9, v1: 5.5, ln: 0.02 }), hn), old);
   const o = HX.fineOpts(sel({ t0: 62, t1: 80, v0: 4.8, v1: 5.9, ln: 0.02 }), hn);
   assert.ok(Number.isInteger(o.theta * 4), 'centre on the 0.25 deg lattice');
-  assert.ok(o.theta - o.thSpan <= 59 && o.theta + o.thSpan >= 80 && o.theta + o.thSpan <= 80 + 0.25, `angles ${o.theta} +- ${o.thSpan}`);   // old reach 59..71, tie 61..81 clipped to the hood
+  assert.ok(o.theta - o.thSpan <= 59 && o.theta + o.thSpan >= 81, `angles ${o.theta} +- ${o.thSpan}`);   // old reach 59..71, tie 61..81, not clipped to the hood (#2b)
   assert.ok(o.vSpanLn >= 0.12 && o.vSpanLn >= Math.log(5.9 / 5.2) && o.vSpanLn >= Math.log(5.2 / 4.8), `vSpanLn ${o.vSpanLn}`);
   assert.deepEqual([o.yawSpan, o.skipAim], [6, true]);
   const fx = HX.fineOpts({ ...sel({ t0: 1, t1: 89, v0: 1, v1: 30, ln: 0.02 }), hood: { vLo: 5, vHi: 5.1 } }, { mode: 'fixed', angleDeg: 70, lo: 70, hi: 70 });
   assert.deepEqual([fx.theta, fx.thSpan], [70, 0]);
+});
+
+test('regression #2b: the widened fine view is not clipped at the hood limits (pick near a limit keeps its scatter hit rate)', () => {
+  const PRE = [[0, -60, 'back', 60, 80, 0.8714], [-40, -60, 'top', 60, 80, 0.8588]];   // hitRate of ef8be0a (pick 66 / 65.5 deg); clipped fix gave 0.619 / 0.770
+  for (const [x, y, spin, lo, hi, hit] of PRE) {
+    const r = spot(x, y, spin, lo, hi);
+    assert.equal(r.verdict, 'POSSIBLE', `${x},${y} ${spin}`);
+    near(r.hitRate, hit, 0.05, `${x},${y} ${spin} hitRate`);
+  }
+  for (const [x, y, spin, lo, hi] of [[0, -60, 'back', 60, 80], [-12.75, -48, 'top', 45, 80], [-48, -60, 'back', 60, 80], [24, -60, 'back', 60, 80], [48, -48, 'back', 60, 80], [-12.75, -48, 'back', 45, 80]]) {
+    const a = spot(x, y, spin, lo, hi).hood.angleDeg;
+    assert.ok(a >= lo && a <= hi, `${x},${y} ${spin}: angle ${a} outside ${lo}-${hi}`);   // the ranking stays inside the hood
+  }
 });

@@ -145,8 +145,8 @@
     var h = sel.hood, fixed = hn.mode === 'fixed', span = Math.max(0.06, 0.5 * Math.log(h.vHi / h.vLo) + 0.02), t = h.tie;
     // adjustable: the analysis span is fixed (+-6 deg angle, +-6 deg yaw, +-12 % speed) so it does not depend on the precision preset
     if (t && (t.t0 - 1 < sel.theta - 6 || t.t1 + 1 > sel.theta + 6 || Math.max(Math.log(t.v1 / sel.v), Math.log(sel.v / t.v0)) + t.ln > Math.max(0.12, span))) {
-      // tie set outside the fine reach: view = hull(old view, tie set) so it is a superset of the old one (same nodes) and independent of the seed
-      var a0 = Math.max(hn.lo, Math.min(t.t0 - 1, sel.theta - 6)), a1 = Math.min(hn.hi, Math.max(t.t1 + 1, sel.theta + 6));
+      // tie set outside the fine reach: view = hull(old view, tie set) superset of the old one (same nodes), independent of the seed
+      var a0 = Math.min(t.t0 - 1, sel.theta - 6), a1 = Math.max(t.t1 + 1, sel.theta + 6);   // not clipped to the hood: the angle scatter needs cells beyond the limits; ranking stays inside (angleIndexRange)
       return { theta: Math.round((a0 + a1) * 2) / 4, thSpan: (a1 - a0) / 2, yawSpan: 6, skipAim: true,
         vSpanLn: Math.max(0.12, span, Math.log(t.v1 / sel.v) + t.ln + 0.01, Math.log(sel.v / t.v0) + t.ln + 0.01) };
     }
