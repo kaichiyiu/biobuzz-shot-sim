@@ -76,3 +76,24 @@ test('the mouth limit ends the far side and is reported as limited', () => {
   assert.ok(Math.abs(hit.plusIn - (L - 66.5)) < 1e-6, `${hit.plusIn} vs ${L - 66.5}`);
   assert.equal(hit.limited, true);
 });
+
+test('entry rule: descending narrows the along range (subset of any), every probe in it descends; maxSpeed likewise', () => {
+  const sp = { thetaDeg: 70, v: 5, yawOffsetDeg: 0 }, any = E.alongRange(BASE, sp);
+  const at = (D) => E.classifyShot({ ...BASE, robot: { x: BASE.robot.x, y: BASE.robot.y - D } }, sp.thetaDeg, sp.v, 90);
+  assert.ok(total(any) > 0 && at(-any.minusIn).rectHit);
+  const d = E.alongRange({ ...BASE, entry: { rule: 'descending' } }, sp);
+  assert.ok(d.minusIn <= any.minusIn && d.plusIn <= any.plusIn);
+  assert.ok(d.minusIn < any.minusIn, 'the flat shot towards the target stops descending before it stops scoring');
+  for (let D = -d.minusIn; D <= d.plusIn + 1e-9; D += 0.25) {   // robot.y - D: +D is further away, matching alongRange's sign
+    const c = at(D);
+    assert.ok(c.rectHit && c.entryAngleDeg < 0, `D ${D}: ${JSON.stringify([c.rectHit, c.entryAngleDeg])}`);
+  }
+  const just = at(-(d.minusIn + 0.25 + 1e-6));   // one tolerance further: scores but no longer descends
+  assert.ok(!just.rectHit || !(just.entryAngleDeg < 0));
+  const v0 = at(0).entrySpeed, ms = E.alongRange({ ...BASE, entry: { rule: 'maxSpeed', maxSpeedMps: v0 + 0.01 } }, sp);
+  assert.ok(ms.minusIn <= any.minusIn && ms.plusIn <= any.plusIn);
+  for (let D = -ms.minusIn; D <= ms.plusIn + 1e-9; D += 0.25) assert.ok(at(D).entrySpeed <= v0 + 0.01 + 1e-9, `maxSpeed at D ${D}`);
+  const none = E.alongRange({ ...BASE, entry: { rule: 'maxSpeed', maxSpeedMps: v0 - 0.5 } }, sp);
+  assert.equal(total(none), 0);   // the setpoint itself breaks the rule
+  assert.deepEqual(E.alongRange({ ...BASE, entry: { rule: 'any' } }, sp), any);   // rule 'any' = legacy path, unchanged
+});

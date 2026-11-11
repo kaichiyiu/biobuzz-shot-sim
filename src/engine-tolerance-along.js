@@ -6,7 +6,8 @@
  *   The mouth is moved by D inches along it; the shot keeps thetaDeg and v (centre exit speed, m/s) and is re-aimed: yaw = heading +
  *   yawOffsetDeg. It scores when the mouth is inside the mouth limit and E.classifyShot(...).rectHit (D10, the windows' own rectangle test).
  *   Per side: steps of stepIn out to the first failure, then bisection to tolIn; the result is the last passing offset (the true edge lies
- *   in [result, result + tolIn]). Passing offsets are assumed contiguous. Setpoint not scoring at D = 0 -> { 0, 0 }.
+ *   in [result, result + tolIn]). Passing offsets are assumed contiguous. A real params.entry rule ('descending' / 'maxSpeed') is applied to
+ *   every probe as well (same semantics as engine-entry cellOk), so the range is a subset of the 'any' range. Setpoint not scoring at D = 0 -> { 0, 0 }.
  *   minusEnd / plusEnd: 'fail' (a real edge), 'mouth' (stopped at the mouth limit or at the centroid), 'cap' (stopped at maxIn);
  *   limited = either end is not 'fail' (that side is only a lower bound).
  * Load after engine.js. Maths: process_docs/issue-7/design.md.
@@ -30,6 +31,7 @@
     opts = opts || {};
     var maxIn = opts.maxIn > 0 ? opts.maxIn : 24, tolIn = opts.tolIn > 0 ? opts.tolIn : 0.25, step = opts.stepIn > 0 ? opts.stepIn : 1;
     var p = I.normParams(params), L = p.mouthLimit, off = setpoint.yawOffsetDeg || 0;
+    var EN = I.ext('entry'), rule = EN ? EN.norm(params.entry) : { rule: 'any' };   // entry rule (D8): the probe must pass it too
     var cen = I.mouthCentroid(p.target, p.hiveState[p.target]);
     var psi = Math.atan2(cen[1] - p.launch.y, cen[0] - p.launch.x), c = Math.cos(psi), s = Math.sin(psi);
     var d0 = Math.hypot(cen[0] - p.launch.x, cen[1] - p.launch.y), yaw = psi / RAD + off;
@@ -39,7 +41,11 @@
       var x = cen[0] - (d0 + D) * c, y = cen[1] - (d0 + D) * s;
       if (Math.abs(x) > L + 1e-9 || Math.abs(y) > L + 1e-9) return false;
       var at = Object.assign({}, params, { mouth: Object.assign({}, params.mouth, { x: x, y: y }) });
-      return E.classifyShot(at, setpoint.thetaDeg, setpoint.v, yaw).rectHit === true;
+      var c = E.classifyShot(at, setpoint.thetaDeg, setpoint.v, yaw);
+      if (c.rectHit !== true) return false;
+      if (rule.rule === 'descending') return c.entryAngleDeg < 0;   // same semantics as engine-entry cellOk (NaN fails)
+      if (rule.rule === 'maxSpeed') return c.entrySpeed <= rule.maxSpeedMps;
+      return true;
     }
 
     function side(sign, geo) {   // geo = distance to the geometric limit on this side
