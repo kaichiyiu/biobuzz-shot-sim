@@ -16,8 +16,7 @@ Result: {"hit", "rect_hit", "entry_angle_deg", "entry_speed", "cause", "entry_w"
   hit = pentagon test (oracle.py); rect_hit = hit and the ball centre at the mouth-plane crossing has |w| <= W2 - r and
   r <= B <= SH - r (B = b - b0, height above the lip in the opening's plane; W2 = width/2, SH = shoulder, data/field.json);
   entry_angle_deg = atan2(vz, vr) of the velocity at the crossing (< 0 = descending), entry_speed = |v| there (m/s);
-  entry_* are null for misses. Hood case (kind "hood"): see oracle_ext_hood.py.
-Later task: C4 adds entry-rule cases.
+  entry_* are null for misses. Optional "entry_rules": [rule] adds "entry_pass": [bool] (oracle_ext_entry.py). Hood case (kind "hood"): see oracle_ext_hood.py.
 """
 import argparse
 import json
@@ -33,6 +32,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import oracle as O  # noqa: E402
 from oracle_ext_spin import s0_of  # noqa: E402  (also installs the symmetric lift clamp into oracle.py's flight)
+from oracle_ext_entry import rule_pass  # noqa: E402
 
 H_RANGE = (4.0, 29.0)
 
@@ -109,6 +109,7 @@ def classify_batch(cases, field=None, chunk=20000, dt=O.DT):
             out[ci][off + si] = {
                 'hit': h, 'rect_hit': bool(rect[n]), 'cause': None if h else O.CAUSES[int(R['cause'][n])],
                 'entry_angle_deg': float(ang[n]) if h else None, 'entry_speed': float(spd[n]) if h else None,
+                'entry_pass': [rule_pass(r, bool(rect[n]), ang[n], spd[n]) for r in cases[ci].get('entry_rules', [])],
                 'entry_w': float(R['entryW'][n]) if h else None, 'entry_B': float(B[n]) if h else None, 'mouth': oc['mouth']}
         i = j
     return [r if 'shots' in c else r[0] for c, r in zip(cases, out)]
@@ -164,6 +165,7 @@ def selftest():
     chk('10 spin top: runs, differs from back (sign of the lift), rect_hit implies hit', any(t['hit'] != r['hit'] for t, r in zip(top, res)) and all(t['hit'] or not t['rect_hit'] for t in top))
     az = [float(O.accel(np.array([2.0]), np.array([0.0]), 0.0, 1.0, np.array([w]))[1][0]) for w in (-5.0, -2.0, 5.0, 2.0)]
     chk('12 lift clamp is symmetric: w r = -5 at |v| = 2 lifts like -2 (oracle.py alone: -5), +5 like +2', az[0] == az[1] == -4.0 - O.G and az[2] == az[3] == 4.0 - O.G)
+    chk('13 entry rules need a rect hit: any / descending / maxSpeed', [rule_pass(r, True, -5.0, 3.0) for r in ({'rule': 'any'}, {'rule': 'descending'}, {'rule': 'maxSpeed', 'maxSpeedMps': 2.0})] == [True, True, False] and not rule_pass({'rule': 'any'}, False, -5.0, 3.0))
     from oracle_ext_hood import selftest as hood_selftest, centre_aim
     Hr = np.zeros((1, 40, 9), bool)                 # diagonal ridge: the centre aim must walk along it and stop at a fixed point
     for k in range(9):

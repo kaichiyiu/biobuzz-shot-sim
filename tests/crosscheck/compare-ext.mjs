@@ -2,7 +2,7 @@
 //   node tests/crosscheck/compare-ext.mjs [--hood 60] [--seed 7] [--no-shots] [--tag x]      (npm run crosscheck:ext)
 // --no-shots skips the mouth and rect families (to run the slow hood family in slices); --tag x suffixes the output files.
 // Writes tests/crosscheck/out/ext[-tag]-{cases,out,probe-cases,probe-out,report}.json. Exit 1 on any non-boundary disagreement.
-// Families: mouth (200 shots, clamped mouths included), rect (300 shots), spin (200 topspin shots), hood (fixed 2/3, adjustable 1/3; default 60 cases).
+// Families (rule = entry-rule outcomes of the agreeing rect hits; entry numbers come from classifyShot entryAngleDeg / entrySpeed): mouth (200 shots, clamped mouths included), rect (300 shots), spin (200 topspin shots), hood (fixed 2/3, adjustable 1/3; default 60 cases).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -19,20 +19,10 @@ const pick = (a) => a[Math.floor(rnd() * a.length)];
 const R_BALL = { pollen: 1.4, nectar: 91.948 / 25.4 / 2 };   // ball radius in inches (data/shooter.json balls)
 const S = (o) => ({ ...BASE, ...o, shooter: { ...BASE.shooter, ...(o.shooter || {}) } });
 
-function engineShot(p, th, v, yaw) {   // classifyShot + the rect rule applied to the last inward mouth-plane crossing of its path
-  const e = E.classifyShot(p, th, v, yaw), out = { hit: e.hit, cause: e.cause, speed: e.entrySpeed, rect: false, angle: null, segMm: null };
-  if (!e.hit) return out;
-  const hx = G.hx[p.target], sg = p.hiveState[p.target], P = e.path, r = R_BALL[p.ballId];
-  const body = (q) => I.worldToBody(q[0], q[1], q[2], hx, sg), f = (q) => body(q)[1] - G.aOut;
-  let cross = null;
-  for (let i = 1; i < P.length; i++) {
-    const f0 = f(P[i - 1]), f1 = f(P[i]);
-    if (!(f0 >= 0 && f1 < 0)) continue;
-    const t = f0 / (f0 - f1), q = P[i - 1].map((c, k) => c + t * (P[i][k] - c)), b = body(q);
-    if (I.insidePentagon(b[0], b[2])) cross = { seg: 25.4 * Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1], P[i][2] - P[i - 1][2]), q: Math.abs(b[0]), B: b[2] - G.b0, ang: Math.atan2(P[i][2] - P[i - 1][2], Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])) * 180 / Math.PI };
-  }
-  if (cross) { out.angle = cross.ang; out.segMm = cross.seg; out.rect = cross.q <= G.W2 - r && cross.B >= r && cross.B <= G.SH - r; }
-  return out;
+const EN = I.ext('entry'), SEG_MM_PER_MPS = 5;   // path samples are 5 ms apart: segment length = entry speed * 5 ms
+function engineShot(p, th, v, yaw, rules) {   // the engine's own classifyShot: hit, rectHit, entryAngleDeg (< 0 descending), entrySpeed (m/s)
+  const e = E.classifyShot(p, th, v, yaw), ent = { entry: [e.entryAngleDeg, e.entrySpeed] };
+  return { hit: e.hit, cause: e.cause, speed: e.entrySpeed, rect: e.rectHit, angle: e.entryAngleDeg, segMm: e.entrySpeed * SEG_MM_PER_MPS, pass: rules.map((r) => e.rectHit && EN.cellOk(ent, 0, r)) };
 }
 
 function config(range, needArc, spin) {   // random mouth set-up with its coarse result; arcs wanted unless needArc is false
@@ -40,10 +30,10 @@ function config(range, needArc, spin) {   // random mouth set-up with its coarse
     const m = { x: (rnd() - 0.5) * 2 * range, y: (rnd() - 0.5) * 2 * range, height: 2 + rnd() * 29 };
     const p = S({ ...(spin ? { shooter: { spin } } : {}), ballId: rnd() < 0.25 ? 'nectar' : 'pollen', target: pick(['red', 'blue']), mouth: m, hiveState: { red: pick([-1, 1]), blue: pick([-1, 1]) } });
     const r = E.evaluate(p, 'coarse');
-    if (r.best || (!needArc && rnd() < 0.25)) return { p, m, r };
+    if (r.best || (!needArc && rnd() < 0.25)) { const sp = (r.best && r.best.entrySpeed) || 4; return { p, m, r, rules: [{ rule: 'descending' }, { rule: 'maxSpeed', maxSpeedMps: 0.9 * sp }, { rule: 'maxSpeed', maxSpeedMps: 1.1 * sp }] }; }
   }
 }
-const oracleCase = (c, shots, extra) => ({ kind: 'shot', mouth: c.m, ball: c.p.ballId, target: c.p.target, hive_state: c.p.hiveState, S0: E.shooterSpin(c.p.shooter), spin: c.p.shooter.spin || 'back', shots, ...extra });
+const oracleCase = (c, shots, extra) => ({ kind: 'shot', mouth: c.m, ball: c.p.ballId, target: c.p.target, hive_state: c.p.hiveState, S0: E.shooterSpin(c.p.shooter), spin: c.p.shooter.spin || 'back', entry_rules: c.rules, shots, ...extra });
 function shotsFor(c, n, sp) {   // dTh deg, dV (log), dYaw deg: perturbation spans around the engine's aim; a third are wide random
   const a = c.r.best, out = [];
   for (let i = 0; i < n; i++) {
@@ -88,25 +78,33 @@ const t0 = Date.now(), out = runOracle(cases, 'ext' + tag);
 
 // ---- compare shots. Entry numbers: the engine path stores positions in whole mm (Int16), so a 5 ms segment at the mouth (~10 mm long at
 // 2 m/s) carries up to ~2.4 mm of rounding error: tolerance = 2.4 mm / segment length, plus 1 deg / 1.5 % for sampling (instant vs segment).
-const fam = Object.fromEntries(['mouth', 'rect', 'spin', 'hood'].map((k) => [k, { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }]));
-const num = { angleErrDeg: [], speedErrPct: [], over: 0, maxAngleBoundRatio: 0, maxSpeedBoundRatio: 0 }, cov = { mouth: [0, 0], rect: [0, 0], spin: [0, 0] }, bad = [], pend = [];
+const fam = Object.fromEntries(['mouth', 'rect', 'spin', 'hood', 'rule'].map((k) => [k, { n: 0, agree: 0, boundary: 0, nonBoundary: 0 }]));
+const num = { seg: [], angleErrDeg: [], speedErrPct: [], over: 0, maxAngleBoundRatio: 0, maxSpeedBoundRatio: 0 }, cov = { mouth: [0, 0], rect: [0, 0], spin: [0, 0] }, bad = [], pend = [];
 units.forEach((u, ci) => {
   const cm = out[ci][0].mouth, em = E.evaluate(u.c.p, 'coarse').mouth;
   if (Math.abs(cm.x - em.x) + Math.abs(cm.y - em.y) + Math.abs(cm.height - em.height) > 1e-9) bad.push({ fam: u.fam, kind: 'mouth clamp', engine: em, oracle: cm });
   cases[ci].shots.forEach((s, si) => {
-    const e = engineShot(u.c.p, s.theta, s.v, s.yaw), o = out[ci][si];
+    const e = engineShot(u.c.p, s.theta, s.v, s.yaw, u.c.rules), o = out[ci][si];
     fam[u.fam].n++;
     const flags = [e.hit !== o.hit && 'hit', e.rect !== o.rect_hit && 'rect'].filter(Boolean);
     if (!flags.length) {
       fam[u.fam].agree++;
       if (o.hit) cov[u.fam][0]++;
       if (o.rect_hit) cov[u.fam][1]++;
-      if (e.hit && e.angle !== null) {
+      if (e.hit && e.angle != null && o.entry_angle_deg != null) {
         const dA = Math.abs(e.angle - o.entry_angle_deg), dS = 100 * Math.abs(e.speed / o.entry_speed - 1), q = 2.4 / e.segMm;
         const bA = q * 180 / Math.PI + 1, bS = 100 * q + 1.5;
-        num.angleErrDeg.push(dA); num.speedErrPct.push(dS);
+        num.angleErrDeg.push(dA); num.speedErrPct.push(dS); num.seg.push(e.segMm);
         num.maxAngleBoundRatio = Math.max(num.maxAngleBoundRatio, dA / bA); num.maxSpeedBoundRatio = Math.max(num.maxSpeedBoundRatio, dS / bS);
         if (dA > bA || dS > bS) { num.over++; bad.push({ fam: u.fam, kind: 'entry numbers', shot: s, engine: { angle: e.angle, speed: e.speed, segMm: e.segMm }, oracle: { angle: o.entry_angle_deg, speed: o.entry_speed } }); }
+        // rule outcome (rect hits only): a difference is a boundary case when the oracle's value lies within the numeric tolerance of the threshold
+        u.c.rules.forEach((r, k) => {
+          const rf = fam.rule; rf.n++;
+          if (e.pass[k] === o.entry_pass[k]) { rf.agree++; return; }
+          const near = r.rule === 'descending' ? Math.abs(o.entry_angle_deg) <= bA : 100 * Math.abs(o.entry_speed / r.maxSpeedMps - 1) <= bS;
+          rf[near ? 'boundary' : 'nonBoundary']++;
+          if (!near) bad.push({ fam: 'rule', kind: JSON.stringify(r), shot: s, situation: u.c.p.target + ' mouth ' + JSON.stringify(u.c.m), engine: { pass: e.pass[k], angle: e.angle, speed: e.speed }, oracle: { pass: o.entry_pass[k], angle: o.entry_angle_deg, speed: o.entry_speed } });
+        });
       }
     } else pend.push({ u, ci, s, e, o, flags });
   });
@@ -170,11 +168,14 @@ hrows.forEach((r, k) => {
   if (cls === 'nonBoundary') bad.push({ fam: 'hood', kind: `window ${r.worst} nodes, ${dn} differing nodes at the engine aim (${flipped} boundary), angle ${r.dA}`, hood: h.hood, mouth: h.p.mouth, target: h.p.target, engine: { angle: r.eA, v: h.w.vExit }, oracle: { angle: o.angle_deg, v: o.v_window, range: o.range_deg, speedCut: o.speed_cut, yawCut: o.yaw_cut } });
 });
 const mx = (a) => (a.length ? +Math.max(...a).toFixed(3) : null);
-const tot = (k) => Object.values(fam).reduce((s, f) => s + f[k], 0);
+const tot = (k) => Object.entries(fam).reduce((s, [n, f]) => s + (n === 'rule' ? 0 : f[k]), 0);   // 'rule' counts rule outcomes, not shots
+const pct = (a, q) => (a.length ? +[...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(q * a.length))].toFixed(3) : null);
+const bins = [[0, 15], [15, 30], [30, 60], [60, 1e9]].map(([lo, hi]) => { const ix = num.seg.map((g, i) => (g >= lo && g < hi ? i : -1)).filter((i) => i >= 0), a = ix.map((i) => num.angleErrDeg[i]);
+  return { segMm: [lo, hi === 1e9 ? null : hi], n: a.length, within1deg: a.filter((x) => x <= 1).length, p95Deg: pct(a, 0.95), maxDeg: mx(a) }; });
 const report = { n: tot('n'), agree: tot('agree'), boundary: tot('boundary'), nonBoundary: bad, families: fam,
   agreementPct: Object.fromEntries(Object.entries(fam).map(([k, f]) => [k, f.n ? +(100 * f.agree / f.n).toFixed(2) : null])),
   agreedHits: Object.fromEntries(Object.entries(cov).map(([k, c]) => [k, { hit: c[0], rect: c[1] }])),
-  entry: { n: num.angleErrDeg.length, maxAngleErrDeg: mx(num.angleErrDeg), maxSpeedErrPct: mx(num.speedErrPct), outsideBound: num.over,
+  entry: { n: num.angleErrDeg.length, within1deg: num.angleErrDeg.filter((x) => x <= 1).length, p50AngleErrDeg: pct(num.angleErrDeg, 0.5), p95AngleErrDeg: pct(num.angleErrDeg, 0.95), bySegment: bins, maxAngleErrDeg: mx(num.angleErrDeg), maxSpeedErrPct: mx(num.speedErrPct), outsideBound: num.over,
     maxAngleErrOverBound: +num.maxAngleBoundRatio.toFixed(3), maxSpeedErrOverBound: +num.maxSpeedBoundRatio.toFixed(3) }, hoodCases: hoods.length, hoodRows: rows, seconds: (Date.now() - t0) / 1000 };
 fs.writeFileSync(path.join(OUT, 'ext' + tag + '-report.json'), JSON.stringify(report, null, 1));
 console.log(JSON.stringify(report, null, 1));
