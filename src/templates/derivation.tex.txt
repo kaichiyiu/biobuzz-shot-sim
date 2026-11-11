@@ -17,7 +17,7 @@
 Ball & \texttt{ {{BALL_ID}} }, mass $m = {{MASS_KG}}$ kg, cross-section $A = {{AREA_M2}}$ m$^2$ \\
 Motor & \texttt{ {{MOTOR_ID}} }, $N_{\mathrm{enc}} = {{TICKS}}$ encoder counts per motor output revolution \\
 Shooter & \texttt{ {{SHOOTER_TYPE}} }, wheel diameter $D = {{WHEEL_D_MM}}$ mm, gear $g = {{GEAR}}$ wheel turns per motor turn \\
-Exit-speed factor & $\eta = {{ETA}}$ \\
+Exit-speed factor & {{ETA_ROW}} \\
 Mouth & $h_0 = {{H0_M}}$ m above the floor ({{H0_IN}} in), $f = {{FWD}}$ in ahead of the robot centre \\
 \end{tabular}
 
@@ -94,17 +94,11 @@ until the bracket is shorter than ${{V_TOL}}$ m/s and returns its midpoint. The 
 \section{Exit speed to wheel and motor rpm}
 The exit speed is a fixed fraction of the wheel surface speed, $v = \eta\,\pi D\, n_{\mathrm{wheel}} / 60$, and the wheel turns $g$ times per motor turn, $n_{\mathrm{wheel}} = g\, n$. Hence
 the motor output speed in rpm is
-\begin{equation}
-  n = \frac{60}{\eta\,\pi D g}\,v = \kappa\, v, \qquad \kappa = \frac{60}{({{ETA}})\,\pi\,({{WHEEL_D_M}}\ \text{m})\,({{GEAR}})} = {{RPM_PER_MPS}}\ \frac{\text{rpm}}{\text{m/s}}.
-\end{equation}
-$\kappa$ is the one constant to retune at the field (\texttt{RPM\_PER\_MPS} in the Java class). With a per-rpm calibration the table rows use $\eta(n)$; the solver uses the single value
-$\kappa$ above (the median over the table).
+{{RPM_BLOCK}}
 
 \section{Encoder ticks}
 A motor velocity command in encoder ticks per second is $n / 60$ revolutions per second times $N_{\mathrm{enc}} = {{TICKS}}$ counts per revolution:
-\begin{equation}
-  \text{ticks/s} = \frac{n}{60}\,N_{\mathrm{enc}} = \frac{\kappa N_{\mathrm{enc}}}{60}\,v = {{TICKS_PER_MPS}}\ v.
-\end{equation}
+{{TICKS_BLOCK}}
 
 {{EXAMPLE_BLOCK}}
 \end{document}

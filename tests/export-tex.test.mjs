@@ -87,12 +87,55 @@ test('renderTex errors: missing template, unknown placeholder, missing constant'
   assert.equal(T.tn(0), '0'); assert.equal(T.tn(1e-6), '1\\times 10^{-6}'); assert.equal(T.tn(2.5e7), '2.5\\times 10^{7}'); assert.equal(T.tn(0.1 + 0.2), '0.3'); assert.equal(T.tn(NaN), '\\text{n/a}');
 });
 
+// F1 (Phase 1 review): kappa = 60 / (eta pi D g) must use the engine's EXIT FACTOR, which for dual wheels is etaDual (1 + k) / 2, also with an applied calibration.
+const DUAL = (etaDual) => ({ ...BASE, shooter: { ...BASE.shooter, type: 'dual', etaDual, topRatio: 0.6 }, hood: HOODS.fixed });
+const cfgOf = (P, calibration) => { const sh = CC.shooterOf(E, P).sh; return { sh, cfg: { v: 1, field: { ballId: 'pollen' }, robot: { motorId: 'yj6000', shooter: { type: sh.type, gear: sh.gear, etaSingle: sh.etaSingle, etaDual: sh.etaDual, topRatio: sh.topRatio, wheelId: 'x' } }, calibration: calibration || null } }; };
+const F1_CASES = () => {
+  const out = [], rowsOf = (P) => E.exportPoints(P, XS).map((q) => E.exportPoint(P, q, XS));
+  const single = { ...BASE, hood: HOODS.fixed }, dual = DUAL(0.475), dualCal = DUAL(0.52);
+  for (const [name, P, cal] of [['single', single, null], ['dual', dual, null], ['dual + applied calibration', dualCal, { calibrated: true, date: '2026-11-11', mode: 'single', applied: { key: 'etaDual', value: 0.52 }, fit: { factor: 0.52 } }]]) {
+    const rows = rowsOf(P), { sh, cfg } = cfgOf(P, cal); out.push({ name, P, rows, sh, cfg, c: S.constantsFrom(P, rows, E) });
+  }
+  return out;
+};
+for (const { name, sh, cfg, c } of F1_CASES()) {
+  test(`F1 ${name}: kappa = 60 / (eta pi D g) with the exit factor equals RPM_PER_MPS (1e-9) and the text prints that eta`, () => {
+    const I = T.inputs(c, cfg, { wheelDiameterMm: sh.wheelDiameterMm }), exit = CC.exitFactorOf(sh);
+    assert.ok(Math.abs(I.eta - exit) <= 1e-12 * exit, `eta ${I.eta} vs exit factor ${exit}`);
+    if (sh.type === 'dual') { assert.ok(Math.abs(I.eta - sh.etaDual * 0.8) < 1e-12 && I.eta < sh.etaDual); assert.equal(I.etaDual, sh.etaDual); }
+    const kappa = 60 / (I.eta * Math.PI * (I.wheelDiameterMm / 1000) * I.gear);
+    assert.ok(Math.abs(kappa / c.rpmPerMps - 1) <= 1e-9, `60/(ETA pi D g) = ${kappa} vs RPM_PER_MPS ${c.rpmPerMps}`);
+    const out = T.renderTex(c, cfg, tpl, { wheelDiameterMm: sh.wheelDiameterMm });
+    assert.ok(out.includes('(' + T.tn(I.eta, 5) + ')\\,\\pi'), 'kappa uses eta');
+    if (sh.type === 'dual') { assert.ok(out.includes('\\eta_{\\mathrm{eff}} = \\eta_{\\mathrm{dual}}\\,(1+k)/2 = ' + T.tn(sh.etaDual, 5)) && out.includes('= ' + T.tn(I.eta, 5) + '$'), 'inputs row'); assert.ok(!out.includes('(' + T.tn(sh.etaDual, 5) + ')\\,\\pi')); }
+    assert.ok(out.includes(T.tn(c.rpmPerMps)));
+  });
+}
+test('F1: an applied value for the other wheel layout is ignored; missing parts of a dual shooter are derived from kappa', () => {
+  const [, d] = F1_CASES(), I = T.inputs(d.c, { ...d.cfg, calibration: { calibrated: true, mode: 'single', applied: { key: 'etaSingle', value: 0.9 } } }, { wheelDiameterMm: d.sh.wheelDiameterMm });
+  assert.ok(Math.abs(I.eta - d.sh.etaDual * 0.8) < 1e-12);
+  const noK = T.inputs(d.c, { ...d.cfg, robot: { ...d.cfg.robot, shooter: { type: 'dual', gear: d.sh.gear, etaDual: d.sh.etaDual } } }, { wheelDiameterMm: d.sh.wheelDiameterMm });
+  assert.ok(noK.derived && Math.abs(noK.eta / (d.sh.etaDual * 0.8) - 1) <= 1e-9, 'eta_eff derived from kappa');
+  assert.match(T.renderTex(d.c, { ...d.cfg, robot: { ...d.cfg.robot, shooter: { type: 'dual', gear: d.sh.gear, etaDual: d.sh.etaDual } } }, tpl, { wheelDiameterMm: d.sh.wheelDiameterMm }), /derived from \$\\kappa\$/);
+});
+
 test('pdflatex (when installed): every rendering compiles without errors', (t) => {
   if (spawnSync('pdflatex', ['--version']).error) return t.skip('pdflatex is not installed');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tex-'));
   for (const [name, { c }] of CASES) {
     const f = path.join(dir, name + '.tex');
     fs.writeFileSync(f, T.renderTex(c, CFG, tpl, { wheelDiameterMm: 96 }));
+    const r = spawnSync('pdflatex', ['-interaction=nonstopmode', '-halt-on-error', '-output-directory', dir, f], { encoding: 'utf8' });
+    assert.equal(r.status, 0, name + ': ' + (r.stdout || '').split('\n').filter((l) => l.startsWith('!')).join(' | '));
+  }
+});
+
+test('pdflatex (when installed): the dual-wheel and the dual + applied-calibration renderings compile (F1)', (t) => {
+  if (spawnSync('pdflatex', ['--version']).error) return t.skip('pdflatex is not installed');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tex-'));
+  for (const { name, sh, cfg, c } of F1_CASES()) {
+    const f = path.join(dir, name.replace(/\W+/g, '_') + '.tex');
+    fs.writeFileSync(f, T.renderTex(c, cfg, tpl, { wheelDiameterMm: sh.wheelDiameterMm }));
     const r = spawnSync('pdflatex', ['-interaction=nonstopmode', '-halt-on-error', '-output-directory', dir, f], { encoding: 'utf8' });
     assert.equal(r.status, 0, name + ': ' + (r.stdout || '').split('\n').filter((l) => l.startsWith('!')).join(' | '));
   }
