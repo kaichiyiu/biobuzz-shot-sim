@@ -25,14 +25,14 @@ function parseCsv(text) {
 }
 
 test('column order is stable; header row matches', () => {
-  assert.deepEqual(F.COLUMNS, ['dMouthIn', 'dRobotIn', 'verdict', 'reachable', 'motorRpmC', 'motorRpmLo', 'motorRpmHi', 'ticksPerSecC', 'ticksPerSecLo', 'ticksPerSecHi',
+  assert.deepEqual(F.COLUMNS, ['dMouthIn', 'dRobotIn', 'reachable', 'motorRpmC', 'motorRpmLo', 'motorRpmHi', 'ticksPerSecC', 'ticksPerSecLo', 'ticksPerSecHi',
     'wheelRpmC', 'wheelRpmLo', 'wheelRpmHi', 'exitSpeedMpsC', 'exitSpeedMpsLo', 'exitSpeedMpsHi', 'windowPct', 'launchDeg', 'servoPos', 'yawOffsetDeg', 'tofS', 'aimZIn',
     'entryAngleDeg', 'entrySpeedMps', 'margin', 'bearingLoDeg', 'bearingHiDeg']);
   const csv = F.toCsv({ header: F.header(CFG, null, ROWS, FIXED), rows: ROWS });
   assert.equal(parseCsv(csv).cols.join(','), F.COLUMNS.join(','));
 });
 
-test('CSV round trip: every number parses back to the same 6-significant-digit value, null is an empty cell, booleans and verdicts survive', () => {
+test('CSV round trip: every number parses back to the same 6-significant-digit value, null is an empty cell, booleans survive', () => {
   assert.ok(ROWS.some((r) => !r.reachable) && ROWS.some((r) => r.reachable && r.bearingDeg));
   const csv = F.toCsv({ header: F.header(CFG, null, ROWS, FIXED), rows: ROWS }), p = parseCsv(csv);
   assert.equal(p.rows.length, ROWS.length);
@@ -50,19 +50,19 @@ test('CSV round trip: every number parses back to the same 6-significant-digit v
     }
   });
   const dead = p.rows.find((r) => r.reachable === 'false');
-  assert.equal(dead.motorRpmC, ''); assert.equal(dead.launchDeg, ''); assert.equal(dead.margin, ''); assert.equal(dead.verdict.length > 0, true);
+  assert.equal(dead.motorRpmC, ''); assert.equal(dead.launchDeg, ''); assert.equal(dead.margin, ''); assert.equal('verdict' in dead, false);
   assert.ok(p.rows.every((r) => r.servoPos === '' || Number(r.servoPos) > 0));
 });
 
 test('cells: comma, quote and newline are quoted; NaN and undefined are empty; numbers have at most 6 significant digits; LF only', () => {
-  const row = { ...ROWS[2], verdict: 'A, "b"', tofS: NaN, margin: undefined, aimZIn: 1 / 3 };
+  const row = { ...ROWS[2], dRobotIn: 'A, "b"', tofS: NaN, margin: undefined, aimZIn: 1 / 3 };
   const csv = F.toCsv({ header: F.header(CFG, null, [row], FIXED), rows: [row] });
   const line = csv.split('\n').find((l) => l.startsWith(`${row.dMouthIn},`));
   assert.ok(line.includes(',"A, ""b""",true,'));
   assert.ok(line.includes(',0.333333,'));
   const p = parseCsv(csv).rows[0];
-  assert.equal(p.verdict, 'A, "b"'); assert.equal(p.tofS, ''); assert.equal(p.margin, '');
-  const nl = F.toCsv({ header: F.header(CFG, null, [row], FIXED), rows: [{ ...row, verdict: 'x\ny' }] });
+  assert.equal(p.dRobotIn, 'A, "b"'); assert.equal(p.tofS, ''); assert.equal(p.margin, '');
+  const nl = F.toCsv({ header: F.header(CFG, null, [row], FIXED), rows: [{ ...row, dRobotIn: 'x\ny' }] });
   assert.ok(nl.includes('"x\ny"'));
   assert.ok(csv.endsWith('\n') && !csv.includes('\r'));
 });
@@ -74,7 +74,7 @@ test('header: full config, calibrated flag, rpmPerMps = rpm per m/s of the engin
   assert.equal(h.rpmPerMps, sig6(CC.motorRpmFromExitSpeed(1, sh)));
   for (const re of [/Accuracy: full/, /Single-eta limitation/, /Bearing:/, /Hood:.*widest speed run/, /NOT CALIBRATED/]) assert.ok(h.notes.some((n) => re.test(n)), String(re));
   const t = { header: h, rows: ROWS };
-  assert.deepEqual(JSON.parse(F.toJson(t)), JSON.parse(JSON.stringify(t)));
+  assert.deepEqual(JSON.parse(F.toJson(t)), JSON.parse(JSON.stringify({ ...t, rows: t.rows.map(({ verdict, ...r }) => r) })));   // the same table, minus the verdict
   const line = parseCsv(F.toCsv(t)).comments.find((c) => c.startsWith('# header: '));
   assert.deepEqual(JSON.parse(line.slice(10)), JSON.parse(JSON.stringify(h)));
   const hc = F.header(CFG, { calibrated: true, date: '2026-11-10', fit: { mode: 'single', factor: 0.36 } }, ROWS, FIXED);
@@ -115,4 +115,15 @@ test('Java arrays: static final double[] DIST_IN, RPM, TICKS_PER_SEC, LAUNCH_DEG
   if (jc.error) return;   // no javac here: compile check skipped
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'exp-java-')); fs.writeFileSync(path.join(dir, 'ShooterTable.java'), src);
   const r = spawnSync('javac', ['-d', dir, path.join(dir, 'ShooterTable.java')], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr);
+});
+
+test('no verdict in any export (owner decision 2026-11-11): no CSV column, no word in notes, JSON rows stripped', () => {
+  const rows = ROWS.map((r) => ({ ...r, verdict: "WON'T WORK" })), t = { header: F.header(CFG, null, rows, FIXED), rows };
+  assert.ok(!F.COLUMNS.includes('verdict'));
+  assert.doesNotMatch(F.toCsv(t), /POSSIBLE|NOT CONSISTENT|WON'T WORK|verdict/i);
+  const j = JSON.parse(F.toJson(t));
+  assert.equal(j.rows.length, rows.length);
+  assert.ok(j.rows.every((r) => !('verdict' in r) && 'reachable' in r));
+  assert.ok(rows.every((r) => r.verdict), 'input rows are not mutated');
+  assert.doesNotMatch(F.toJavaArrays(t), /verdict|POSSIBLE|WON'T WORK/i);
 });

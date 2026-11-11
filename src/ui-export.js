@@ -64,7 +64,7 @@
     return rows.map(function (r) {
       var c = { dist: d(r.dRobotIn), bad: !r.reachable };
       if (!r.reachable) {
-        var why = r.overMotorLimit ? 'over motor limit' : String(r.verdict || 'not reachable').toLowerCase();
+        var why = r.overMotorLimit ? 'over motor limit' : 'not reachable';
         var rp = r.overMotorLimit && r.motorRpm ? n(r.motorRpm.c, 0) + ' [' + n(r.motorRpm.lo, 0) + '-' + n(r.motorRpm.hi, 0) + ']' : '-';
         return Object.assign(c, { rpm: rp, ticks: '-', angle: '-', tof: '-', bearing: '-', note: why });
       }

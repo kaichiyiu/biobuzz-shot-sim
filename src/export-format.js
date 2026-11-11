@@ -17,7 +17,7 @@
   function plain(k) { return function (r) { return r[k]; }; }
 
   var COLS = [
-    ['dMouthIn', plain('dMouthIn')], ['dRobotIn', plain('dRobotIn')], ['verdict', plain('verdict')], ['reachable', plain('reachable')],
+    ['dMouthIn', plain('dMouthIn')], ['dRobotIn', plain('dRobotIn')], ['reachable', plain('reachable')],
     ['motorRpmC', rng('motorRpm', 'c')], ['motorRpmLo', rng('motorRpm', 'lo')], ['motorRpmHi', rng('motorRpm', 'hi')],
     ['ticksPerSecC', rng('ticksPerSec', 'c')], ['ticksPerSecLo', rng('ticksPerSec', 'lo')], ['ticksPerSecHi', rng('ticksPerSec', 'hi')],
     ['wheelRpmC', rng('wheelRpm', 'c')], ['wheelRpmLo', rng('wheelRpm', 'lo')], ['wheelRpmHi', rng('wheelRpm', 'hi')],
@@ -84,7 +84,9 @@
     return out.join('\n') + '\n';
   }
 
-  function toJson(t) { return JSON.stringify({ header: t.header, rows: t.rows }, null, 2); }
+  // no verdict in any export (owner decision 2026-11-11): the engine row may still carry one, it is stripped from the copies
+  function noVerdict(r) { var c = {}; Object.keys(r).forEach(function (k) { if (k !== 'verdict') c[k] = r[k]; }); return c; }
+  function toJson(t) { return JSON.stringify({ header: t.header, rows: t.rows.map(noVerdict) }, null, 2); }
 
   var JAVA = [   // name, comment, getter
     ['DIST_IN', 'robot distance to the target CELL mouth centre, inches (mouth distance + mouth-forward offset)', plain('dRobotIn')],

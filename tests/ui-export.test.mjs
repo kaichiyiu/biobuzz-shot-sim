@@ -63,11 +63,11 @@ test('exportRange: reachable rows only (limited copy), null when none; calibrati
   assert.equal(X.etaCurveOf({ calibrated: true, mode: 'single', fit: { curve } }), undefined); assert.equal(X.etaCurveOf(null), undefined);
 });
 
-test('rowCells: distance in display units, unreachable rows show their verdict', () => {
+test('rowCells: distance in display units, unreachable rows never print a verdict', () => {
   const r = rowAt(3), c = X.rowCells([r], U, 'metric')[0];
   assert.equal(c.dist, U.nf(U.toLen(r.dRobotIn, 'metric'), 1)); assert.match(c.rpm, /^[\d,]+ \[[\d,]+-[\d,]+\]$/); assert.match(c.angle, /°$/);
   const u = X.rowCells([{ dRobotIn: 40, dMouthIn: 40, reachable: false, verdict: "WON'T WORK" }], U, 'imperial')[0];
-  assert.equal(u.note, "won't work"); assert.equal(u.rpm, '-');
+  assert.equal(u.note, 'not reachable'); assert.equal(u.rpm, '-');
 });
 
 test('CSV through buildTable carries the uncalibrated note and the column row', () => {
