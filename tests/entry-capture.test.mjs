@@ -155,3 +155,31 @@ test('res.entry.coarse: non-zero dropped at (-60,-60), adjustable hood 45-80, de
   const c = E.evaluate({ ...sp, entry: { rule: 'descending' } }, 'coarse').entry;   // coarse mode: final view IS the coarse view
   assert.deepEqual(c.coarse, { kept: c.kept, dropped: c.dropped });
 });
+
+// ---- asin decode needs vx >= 0 at the crossing: backspin lobs (launch >= 84 deg, v >= 5.5 m/s) have backward-moving segments (#12d)
+test('lobs with backward-moving segments: the crossing segment moves forward and the angle matches the float reference within 0.1 deg', () => {
+  const q0 = setup(BASE), t = q0.table, buf = new Int16Array(4000), info = new Int32Array(4);
+  const backward = (th, v) => { I.fly(t.K, t.S0, th, v, buf, info); for (let k = 1; k < info[0]; k++) if (buf[2 * k] < buf[2 * k - 2]) return true; return false; };
+  let nb = 0; for (const P of t.trajs) for (let k = 1; k < P.length / 2; k++) if (P[2 * k] < P[2 * k - 2]) { nb++; break; }
+  assert.ok(nb >= 100, 'table has trajectories that move backwards: ' + nb);
+  let checked = 0, steep = 0, maxAbs = 0;
+  for (const [x, y] of [[-42, -18], [-36, -18], [-36, -24]]) {
+    const q = setup({ ...BASE, robot: { x, y } }), ps = q.grid.ctx.psi0;
+    const fine = I.fineStage(q.p, q.table, q.grid, { theta: 87, v: 15, yaw: ps, sigV: 0.02 }, q.mo, q.sh, q.bp, { theta: 87, thSpan: 3, vSpanLn: 0.5, yawSpan: 6, skipAim: true }).view;
+    for (const view of [q.view, fine]) {
+      const cs = rectCells(view).filter((i) => { const k = cell(view, i); return k.th >= 84 && backward(k.th, k.v); });
+      cs.sort((i, j) => Math.abs(view.entry[2 * j]) - Math.abs(view.entry[2 * i]));   // steepest first, then a deterministic spread
+      for (const i of [...cs.slice(0, 25), ...cs.slice(25).filter((_, n) => n % 12 === 0)]) {
+        const k = cell(view, i), r = I.classifyCore(q.p, q.grid.ctx, t.K, t.S0, k.th, k.v, k.yaw);
+        I.fly(t.K, t.S0, k.th, k.v, buf, info);
+        const seg = Math.floor(r.tToCell / 0.005 + 1e-9) + 1;
+        assert.ok(buf[2 * seg] - buf[2 * seg - 2] > 0, `crossing segment moves backwards: cell ${i} th ${k.th} v ${k.v.toFixed(2)}`);
+        const ref = refAngle(t.S0, k.th, k.v, r.tToCell);
+        assert.ok(Math.abs(r.entryAngleDeg - ref) <= 0.1, `${r.entryAngleDeg} vs ${ref}`);
+        assert.ok(Math.abs(view.entry[2 * i] - ref) <= 0.1, `view.entry ${view.entry[2 * i]} vs ${ref}`);
+        checked++; maxAbs = Math.max(maxAbs, Math.abs(ref)); if (Math.abs(ref) > 84) steep++;
+      }
+    }
+  }
+  assert.ok(checked >= 100 && steep >= 20, `cells checked ${checked}, steeper than 84 deg ${steep}, max |angle| ${maxAbs}`);
+});
