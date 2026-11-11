@@ -85,3 +85,19 @@ test('collect(apply(cfg)) round trips a customised config', () => {
   assert.deepEqual(back, cfg);
   U.setSystem('imperial');
 });
+
+test('preserveLegacy restores the six legacy keys (changed, removed and created) after fn, even when fn throws', () => {
+  const store = new Map([['biobuzz-shot-sim.spin', 'top'], ['biobuzz-shot-sim.entry', '{"rule":"maxSpeed"}'], ['biobuzz-shot-sim.units', 'metric'], ['other', 'x']]);
+  const st = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const r = C.preserveLegacy(st, () => {
+    st.setItem('biobuzz-shot-sim.spin', 'back'); st.removeItem('biobuzz-shot-sim.units'); st.setItem('biobuzz-shot-sim.hood', 'zzz'); st.setItem('other', 'y');
+    return 7;
+  });
+  assert.equal(r, 7);
+  assert.equal(store.get('biobuzz-shot-sim.spin'), 'top'); assert.equal(store.get('biobuzz-shot-sim.entry'), '{"rule":"maxSpeed"}');
+  assert.equal(store.get('biobuzz-shot-sim.units'), 'metric'); assert.ok(!store.has('biobuzz-shot-sim.hood'));
+  assert.equal(store.get('other'), 'y');            // non-legacy keys are not touched
+  assert.throws(() => C.preserveLegacy(st, () => { st.setItem('biobuzz-shot-sim.spin', 'q'); throw new Error('boom'); }), /boom/);
+  assert.equal(store.get('biobuzz-shot-sim.spin'), 'top');
+  assert.equal(C.preserveLegacy(null, () => 3), 3);
+});

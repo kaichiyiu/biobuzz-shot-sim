@@ -68,7 +68,19 @@
     Object.keys(cfg.ext || {}).forEach(function (k) { put(k, cfg.ext[k]); });
   }
 
-  var api = { collect: collect, apply: apply, SAVE_MS: SAVE_MS };
+  // legacy per-module keys: applying a share link / import must not rewrite them (their setters persist). Exact snapshot/restore of the stored strings.
+  var LEGACY_KEYS = ['units', 'origin', 'hood', 'spin', 'entry', 'folds'].map(function (k) { return 'biobuzz-shot-sim.' + k; });
+  function preserveLegacy(store, fn) {
+    var snap = {};
+    try { LEGACY_KEYS.forEach(function (k) { snap[k] = store ? store.getItem(k) : null; }); } catch (e) { store = null; }
+    try { return fn(); } finally {
+      if (store) LEGACY_KEYS.forEach(function (k) {
+        try { if (snap[k] === null || snap[k] === undefined) store.removeItem(k); else if (store.getItem(k) !== snap[k]) store.setItem(k, snap[k]); } catch (e) { /* blocked */ }
+      });
+    }
+  }
+
+  var api = { collect: collect, apply: apply, preserveLegacy: preserveLegacy, LEGACY_KEYS: LEGACY_KEYS, SAVE_MS: SAVE_MS };
   if (node) { module.exports = api; return; }
 
   // ------------------------------------------------------------------ browser glue
@@ -119,7 +131,7 @@
     rd.onload = function () {
       var r = IO.fromJson(String(rd.result), ctx.data);
       if (!r.cfg) return say('Not a config file: ' + r.warnings[0]);
-      applyCfg(r.cfg);
+      preserveLegacy(storage(), function () { applyCfg(r.cfg); });
       saveNow(true);
       say('Config imported' + (r.warnings.length ? ' (' + r.warnings.length + ' value' + (r.warnings.length > 1 ? 's' : '') + ' adjusted)' : ''));
     };
@@ -161,7 +173,7 @@
         if (keepUnits) r.cfg.display.units = keepUnits;
         if (keepOrigin) r.cfg.display.origin = keepOrigin;
       }
-      applyCfg(r.cfg);
+      if (r.source === 'hash') preserveLegacy(storage(), function () { applyCfg(r.cfg); }); else applyCfg(r.cfg);
       baseline = sig();
     },
     onChange: function () { schedule(); },
