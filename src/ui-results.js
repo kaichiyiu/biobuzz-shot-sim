@@ -31,16 +31,23 @@
     return c;
   }
 
+  // tolerance model (I7): "POSSIBLE · 1.6× margin" ("≥ " when it is only a bound); margin null (cannot be shot) -> the verdict alone
+  function marginBadge(t) {
+    if (t.margin == null) return t.verdict;
+    var m = t.margin, n = t.capped ? String(t.sMax) : (m < 1 - 1e-6 && m.toFixed(1) === '1.0' ? m.toFixed(2) : m.toFixed(1));
+    return t.verdict + ' · ' + (t.capped || t.lowerBound ? '≥ ' : '') + n + '× margin';
+  }
+
   // badge: icon + LABEL · NN% (never colour alone); no label when the verdict is null (error result)
   function renderBadge(r) {
     var badge = D.$('verdictBadge'), box = D.$('warnings');
     if (r.verdict == null) badge.hidden = true;
     else {
-      var cls = D.VCLASS[r.verdict] || 'bad';
+      var tol = r.tolerance && r.tolerance.verdict ? r.tolerance : null, cls = D.VCLASS[tol ? tol.verdict : r.verdict] || 'bad';
       badge.hidden = false;
       badge.className = 'verdict-badge v-' + cls;
       badge.innerHTML = D.ICON[cls];
-      badge.appendChild(document.createTextNode(r.verdict + ' · ' + Math.floor(r.hitRate * 100 + 1e-9) + '%'));
+      badge.appendChild(document.createTextNode(tol ? marginBadge(tol) : r.verdict + ' · ' + Math.floor(r.hitRate * 100 + 1e-9) + '%'));
     }
     D.$('reason').textContent = D.L10n(r.reason);
     box.replaceChildren();
