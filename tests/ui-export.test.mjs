@@ -122,6 +122,16 @@ test('F3: no change -> not labelled; a change that is reverted before the end is
   assert.match(r3.log.say[r3.log.say.length - 1], /Cancelled after 1 rows.*settings at the start of the run/); assert.equal(r3.log.algo[0].ready, false);
 });
 
+test('export run: a tolerance is passed with best:false (copy), the captured params stay untouched; no tolerance -> same object', () => {
+  const tol = { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 2, source: 'measured', best: true }, PT = { ...P, tolerance: tol };
+  const r = rig(); r.hook.onResult({}, PT, 'full'); r.deps.run();
+  const sent = r.log.runs[0].p;
+  assert.equal(sent.tolerance.best, false); assert.deepEqual({ ...sent.tolerance, best: true }, tol);
+  assert.equal(tol.best, true); assert.equal(PT.tolerance, tol); assert.notEqual(sent, PT);
+  const r2 = rig(); r2.hook.onResult({}, P, 'full'); r2.deps.run();
+  assert.equal(r2.log.runs[0].p, P);
+});
+
 test('F3 pure: isStale compares params and calibration by value; the note text is exported', () => {
   const cap = { p: { a: 1 }, calib: { x: 1 } };
   assert.equal(X.isStale(cap, { a: 1 }, { x: 1 }), false); assert.equal(X.isStale(cap, { a: 2 }, { x: 1 }), true); assert.equal(X.isStale(cap, { a: 1 }, null), true);

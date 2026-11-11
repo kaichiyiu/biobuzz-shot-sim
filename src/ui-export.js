@@ -111,7 +111,8 @@
     var p = lastP, c = calib(), rows = [], xs = runSettings(settings, ctx.engine, p);
     var cap = { p: p, calib: c, cfg: cfg(), etaCurve: etaCurveOf(c), free: usableFreeRpm(ctx.engine, p) };   // P1-F3: everything the table is built from, captured now
     panel.busy(true); panel.progress(0, 1); panel.say('Running at full accuracy...');
-    run = root.ExportRunner.run(p, xs, {
+    var runP = p.tolerance ? Object.assign({}, p, { tolerance: Object.assign({}, p.tolerance, { best: false }) }) : p;   // rows only need the margin: skip the best-setpoint search (cap.p stays the live params)
+    run = root.ExportRunner.run(runP, xs, {
       etaCurve: cap.etaCurve,
       onRow: function (row, done, total) { rows.push(row); panel.progress(done, total); }
     });
