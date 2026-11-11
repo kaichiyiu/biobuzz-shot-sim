@@ -57,12 +57,13 @@ test('aimZIn: interpolated path height at rho = distIn (near the CELL mouth cent
   assert.equal(E.exportRow({ ...r, distIn: 1e4 }, Q, P, {}).aimZIn, null);
 });
 
-test('servo map is linear through the two points; absent or degenerate map gives null; settings clamp', () => {
+test('servo map is linear through the two points; absent or degenerate map gives null; settings defaults', () => {
   const r = full(P, Q), th = r.best.thetaDeg, sv = { deg1: 45, pos1: 0.2, deg2: 80, pos2: 0.9 };
   near(E.exportRow(r, Q, P, { servo: sv }).servoPos, 0.2 + (th - 45) * 0.7 / 35, 1e-12, 'servo');
   assert.equal(E.exportRow(r, Q, P, {}).servoPos, null);
   assert.equal(E.exportRow(r, Q, P, { servo: { ...sv, deg2: 45 } }).servoPos, null);
-  assert.deepEqual([X.exportSettings({ stepIn: 1 }, P).stepIn, X.exportSettings({ stepIn: 99 }, P).stepIn, X.exportSettings({}, P).stepIn], [2, 12, 4]);
+  assert.deepEqual([X.exportSettings({ stepIn: 1 }, P).stepIn, X.exportSettings({ stepIn: 24 }, P).stepIn, X.exportSettings({}, P).stepIn, X.exportSettings({ stepIn: -3 }, P).stepIn], [1, 24, 4, 4]);   // no upper clamp here (UI range 2-12)
+  assert.equal(X.exportPoints(P, { stepIn: 24 }).length, 3);
   assert.equal(X.exportSettings({}, P).ticksPerMotorRev, 28); assert.equal(X.exportSettings({ ticksPerMotorRev: 537.7 }, P).ticksPerMotorRev, 537.7);
   assert.equal(X.exportPoints(P, { stepIn: 12 }).length, E.sweepPoints(P, 12).length);
 });
