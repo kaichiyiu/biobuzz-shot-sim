@@ -9,8 +9,9 @@
  *   { margin, boxMargin, alongMargin, limitingAxis: 'yaw'|'angle'|'rpm'|'along'|null, limitingSide: -1|1|null, lowerBound, capped, sMax,
  *     perAxis: { yaw, angle, rpm }, position: { lateralIn, alongIn: [-minusIn, plusIn] | null }, verdict, bands, cappedBy: null|'unreachable'|'headroom',
  *     resolution, basis: 'rect', entryRule, mode: 'full'|'coarse', viewLimited, tolerance, setpoint, along, bestSetpoint }
+ *   margin null = no aim, or the aim needs more speed than the motor has (cappedBy 'unreachable'; boxMargin / alongMargin then describe the uncapped aim).
  *   margin 1.0 = just fits; >= sMax (4) is reported as 4 with capped = true; lowerBound = the binding term only bounds the margin from below
- *   (box ran into the view edge / along range stopped at the mouth limit or the cap). margin null = no aim (verdict WON'T WORK).
+ *   (box ran into the view edge / along range stopped at the mouth limit or the cap). (verdict WON'T WORK).
  *   setpoint = { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, cell, moved }; bestSetpoint (full view only, else null) = the cell of the same view
  *   with the largest box margin { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, boxMargin, alongMargin, margin, viewLimited, cell, evaluated, searchMs }.
  * UMD: Node module.exports = factory(require('./engine.js'), require('./engine-tolerance-core.js')); browser / worker factory(root.ShotEngine,
@@ -153,10 +154,10 @@
       }
       out.position = { lateralIn: K.wY > 0 ? res.distIn * Math.tan(Math.min(89, Math.min(bx.s, SMAX) * K.wY) * RAD) : null, alongIn: al ? [-al.minusIn, al.plusIn] : null };
       out.setpoint = { thetaDeg: sp.theta, v: sp.v, motorRpm: rpmC, yawDeg: sp.yaw, yawOffsetDeg: yo, cell: sp.cell, moved: sp.moved };
-      if (tn.best && view.thStep < 1) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx, rpmC);
+      if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx, rpmC);
     }
     out.verdict = verdictOf(out.margin, out.bands);
-    if (unreachable) { out.verdict = V[2]; out.cappedBy = 'unreachable'; }
+    if (unreachable) { out.verdict = V[2]; out.cappedBy = 'unreachable'; out.margin = null; out.capped = false; out.limitingAxis = out.limitingSide = null; out.lowerBound = false; }   // boxMargin / alongMargin stay: they describe the uncapped aim
     else if (out.verdict === V[0] && mc && mc.control === 'pid' && mc.headroom > down) { out.verdict = V[1]; out.cappedBy = 'headroom'; }
     return out;
   }

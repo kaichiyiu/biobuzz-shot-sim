@@ -119,7 +119,7 @@ test('motor rules: unreachable -> WON\'T WORK; PID with headroom above the downg
   const tol = { yawDeg: 0.2, angleDeg: 0.2, rpm: 10, posIn: 0 }, base = run(tol), down = E.constants().model.downgrade;
   assert.equal(down, 0.92); assert.ok(base.margin >= 1.25 && base.verdict === V[0] && base.cappedBy === null, JSON.stringify([base.margin, base.verdict]));
   const slow = run(tol, { ...C.res, code: 'TOO_SLOW', best: { ...C.res.best, reachable: false } });
-  assert.deepEqual([slow.verdict, slow.cappedBy, slow.margin], [V[2], 'unreachable', base.margin]);
+  assert.deepEqual([slow.verdict, slow.cappedBy, slow.margin, slow.boxMargin, slow.bestSetpoint], [V[2], 'unreachable', null, base.boxMargin, null]);
   assert.equal(run(tol, { ...C.res, best: { ...C.res.best, reachable: false } }).verdict, V[2]);
   const pid = (control, headroom) => run(tol, { ...C.res, motor: { ...C.res.motor, control, headroom } });
   assert.deepEqual([pid('pid', 0.95).verdict, pid('pid', 0.95).cappedBy], [V[1], 'headroom']);

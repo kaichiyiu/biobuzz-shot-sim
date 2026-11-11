@@ -1550,6 +1550,7 @@
     res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
     if (hx) res.hood = hx.result(v || view, sel, res, hn, mode, { mo: mo, sh: sh, bp: bp });
     if (en) res.entry = EXT.entry.result(v || view, sel, p, en, view);
+    if (params && params.tolerance && EXT.tolerance) res.tolerance = EXT.tolerance.result(v || view, sel, res, EXT.tolerance.norm(params.tolerance), { p: p, mo: mo, sh: sh, bp: bp });   // tolerance margin (#7)
     res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
