@@ -61,9 +61,9 @@ test('describe: capped, lowerBound, unreachable, headroom cap, coarse preview, b
   d = PN.describe({ ...base, capped: false, margin: 1.8, lowerBound: true, limitingAxis: 'along', limitingSide: 1, mode: 'full' }, U);
   assert.equal(d.head, '≥ 1.8×'); assert.match(d.limit, /position along the shot line, away from the target\..*At least this much/);
   d = PN.describe({ ...base, margin: null, capped: false, verdict: "WON'T WORK", cappedBy: 'unreachable' }, U);
-  assert.equal(d.head, "WON'T WORK"); assert.match(d.notes[0], /cannot produce this shot/);
+  assert.equal(d.head, 'out of reach'); assert.match(d.notes[0], /cannot produce this shot/);
   d = PN.describe({ ...base, capped: false, margin: 2, verdict: 'NOT CONSISTENT', cappedBy: 'headroom' }, U, { downgrade: 0.92 });
-  assert.match(d.notes[0], /more than 92 % of its usable free speed/);
+  assert.match(d.notes[0], /more than 92 % of its usable free speed/); assert.doesNotMatch(d.notes[0], /NOT CONSISTENT|verdict/i);
   d = PN.describe({ ...base, capped: false, margin: 1.5, bestSetpoint: { thetaDeg: 60, motorRpm: 2000, yawOffsetDeg: -2, margin: 1.5 } }, U);
   assert.match(d.best, /already the most forgiving/);
   d = PN.describe({ ...base, capped: false, margin: 1.2, bestSetpoint: { thetaDeg: 60, motorRpm: 2000.4, yawOffsetDeg: -2, margin: 1.4, viewLimited: true } }, U);
@@ -104,21 +104,19 @@ test('hook: default = no tolerance (extendParams leaves p alone, slice null, no 
   assert.equal(b.hook.configSlice.key, 'tolerance'); assert.equal(b.hook.configSlice.get(), null);
   const p = { a: 1 }; assert.equal(b.hook.extendParams(p, {}), p); assert.ok(!('tolerance' in p));
   assert.equal(b.body.classList.has('has-tolerance'), false);
-  const note = b.cap.parentNode.kids[1];
-  assert.equal(note.attrs.id, 'tolMotorsNote'); assert.equal(note.hidden, true);
+  assert.equal(b.cap.parentNode.kids.length, 1, 'no note under the motors table any more (no verdicts)');
   assert.deepEqual(flat(b.wrap).filter((x) => x.tag === 'input').map((x) => x.attrs.id), ['tolYaw', 'tolAngle', 'tolRpm', 'tolPos']);
   assert.equal(b.wrap.attrs['aria-live'], 'off');
 });
 
-test('typing a tolerance: recalc, params.tolerance (best:true, measured), body class, motors note, slice; position parsed in display units', () => {
+test('typing a tolerance: recalc, params.tolerance (best:true, measured), body class, slice; position parsed in display units', () => {
   const b = browser();
   b.type('tolYaw', '1'); b.type('tolAngle', '1'); b.type('tolRpm', '50'); b.type('tolPos', '2');
   assert.equal(b.ctx.recalcs, 4);
   const p = b.hook.extendParams({}, {});
   assert.deepEqual(J(p.tolerance), { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 2, source: 'measured', best: true });
   assert.equal(b.body.classList.has('has-tolerance'), true);
-  const note = b.cap.parentNode.kids[1];
-  assert.equal(note.hidden, false); assert.equal(note.textContent, 'Verdicts in this table use the old hit-rate model.');
+  assert.equal(b.cap.parentNode.kids.length, 1);
   assert.deepEqual(J(b.hook.configSlice.get()), { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 2, source: 'measured' });
   b.type('tolYaw', 'abc'); assert.equal(b.input('tolYaw').value, '1'); assert.equal(b.ctx.recalcs, 4);   // junk keeps the old value, no recalc
   b.type('tolYaw', ''); assert.equal(b.hook.extendParams({}, {}).tolerance.yawDeg, 0);
@@ -179,22 +177,20 @@ test('onResult renders the margin block (preview tag on coarse); a result withou
   b.hook.onResult(run(null), {}, 'full'); assert.equal(res.kids.length, 0);
 });
 
-test('I8 markup / css contract: the precision row is the .ctl holding #precHelp, the 7th motors column is Hit rate, both hidden under body.has-tolerance', () => {
+test('markup / css contract: the precision row (.ctl holding #precHelp) and motors columns 7 (Hit rate) and 8 (Verdict) are hidden ALWAYS', () => {
   const css = fs.readFileSync(path.join(ROOT, 'src', 'ext.css'), 'utf8'), html = fs.readFileSync(path.join(ROOT, 'src', 'markup.html'), 'utf8');
-  assert.match(css, /body\.has-tolerance \.ctl:has\(> #precHelp\) \{ display: none; \}/);
-  assert.match(css, /body\.has-tolerance \.motors table :is\(th, td\):nth-child\(7\) \{ display: none; \}/);
+  assert.match(css, /^\.ctl:has\(> #precHelp\) \{ display: none; \}/m);
+  assert.match(css, /^\.motors table :is\(th, td\):nth-child\(n\+7\) \{ display: none; \}/m);
+  assert.doesNotMatch(css, /body\.has-tolerance \.motors/);
   assert.match(html, /<div class="ctl"><span class="label" id="prec-l">[\s\S]*?<span class="help" id="precHelp"><\/span>\s*<\/div>/);
   const ths = [...html.match(/<thead><tr>([\s\S]*?)<\/tr><\/thead>/g).find((t) => /Hit rate/.test(t)).matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
-  assert.equal(ths[6], 'Hit rate'); assert.equal(ths.length, 8);
+  assert.equal(ths[6], 'Hit rate'); assert.equal(ths[7], 'Verdict'); assert.equal(ths.length, 8);
+  assert.match(css, /\.verdict-badge\.v-neutral/);
+  assert.doesNotMatch(html.replace(/<button[^>]*scanBtn[\s\S]*?<\/button>/, '').replace(/<span id="heatLegend"[\s\S]*?<\/span>/, ''), /POSSIBLE|NOT CONSISTENT|WON'T WORK/);   // static text (the legacy map button / legend stay hidden)
 });
 
-test('reason line: while a margin is shown the hit-rate wording is replaced (margin, limiter, headroom); no margin / no tolerance leave it alone', () => {
-  const r = run(TOL), t = r.tolerance, h = Math.round((1 - r.motor.headroom) * 100);
-  assert.equal(PN.reason(t, r), `Margin ${PN.fmtMargin(t.margin)}× · limited by launch angle, low side · ${h} % motor headroom`);
-  assert.equal(PN.reason({ ...t, capped: true, sMax: 4, limitingAxis: null }, r), `Margin ≥ 4× · ${h} % motor headroom`);
-  assert.match(PN.reason({ ...t, cappedBy: 'headroom' }, { motor: { headroom: 0.95 } }), /the motor runs at 95 % of free speed — no headroom/);
-  assert.equal(PN.reason({ ...t, margin: null }, r), null); assert.equal(PN.reason(null, r), null);
-  const b = browser(); b.reason.textContent = "Scores 87% of shots with 62% motor headroom"; b.hook.onResult(run(null), {}, "full"); assert.match(b.reason.textContent, /^Scores 87%/);
-  b.hook.onResult(r, {}, 'full'); assert.doesNotMatch(b.reason.textContent, /shots/); assert.match(b.reason.textContent, /^Margin \d\.\d× · limited by/);
-  b.reason.textContent = 'The hood angle is not valid'; b.hook.onResult(r, {}, 'full'); assert.equal(b.reason.textContent, 'The hood angle is not valid');   // error texts stay
+test('the I8 reason rewrite is gone: ui-tolerance leaves #reason alone (ui-results owns the line)', () => {
+  const b = browser(); b.reason.textContent = 'Scores 87% of shots with 62% motor headroom';
+  b.hook.onResult(run(TOL), {}, 'full'); assert.equal(b.reason.textContent, 'Scores 87% of shots with 62% motor headroom');
+  assert.equal(PN.reason, undefined); assert.equal(T.MOTOR_NOTE, undefined);
 });

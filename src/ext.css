@@ -41,9 +41,10 @@
 .tol-margin { font-weight: 600; }
 .tol-best { color: var(--ink-2); }
 .tol-msg:empty, .tol-res:empty { display: none; }
-/* I8: with a tolerance the margin verdict replaces the hit-rate model on the main screen (Show the math still lists the hit rate) */
-body.has-tolerance .ctl:has(> #precHelp) { display: none; }
-body.has-tolerance .motors table :is(th, td):nth-child(7) { display: none; }   /* motors table: Hit rate (7th of 8 columns) */
+/* no verdicts (owner decision 2026-11-11): neutral margin badge; the motors table never shows Hit rate (7th) or Verdict (8th) */
+.verdict-badge.v-neutral { color: var(--ink); background: var(--panel-2, color-mix(in srgb, var(--ink) 8%, transparent)); }
+.ctl:has(> #precHelp) { display: none; }   /* Robot precision only fed the hit-rate model, which is no longer shown */
+.motors table :is(th, td):nth-child(n+7) { display: none; }
 /* field margin map (ui-margin-map): toolbar controls, tooltip, legend swatch; the legacy coarse Verdict map is hidden once the module has loaded (no verdicts) */
 .mm-bar { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mm-colour { font: 500 13px/1.2 var(--cond); color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }

@@ -1,4 +1,4 @@
-// I7: renderBadge on a fake DOM. Without r.tolerance the legacy text is unchanged; with a tolerance margin the badge shows the margin verdict.
+// renderBadge on a fake DOM (owner decision 2026-11-11: no verdicts). Without r.tolerance the badge is hidden; with one it shows a neutral margin; the reason line has no hit rate.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -18,42 +18,52 @@ function rig() {
   const win = { ShotUI: { window: {} } };
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src', 'ui-results.js'), 'utf8'), { window: win, document: doc });
   win.ShotUI.results.init({ $: (id) => els[id], nf: (n, d) => Number(n).toFixed(d), L10n: (s) => s, ICON: { good: '<g/>', warn: '<w/>', bad: '<b/>', alert: '<a/>' },
-    VCLASS: { 'POSSIBLE': 'good', 'NOT CONSISTENT': 'warn', "WON'T WORK": 'bad' } });
-  return { render: (r) => { win.ShotUI.results.renderBadge(r); const b = els.verdictBadge; return { hidden: b.hidden, cls: b.className, icon: b.innerHTML, text: b.kids.map((k) => k.text).join('') }; }, els };
+    VCLASS: { 'POSSIBLE': 'good', 'NOT CONSISTENT': 'warn', "WON'T WORK": 'bad' }, U: { headingRangeToUser: (a, b) => ({ from: a, to: b, wraps: false }) } });
+  return { reason: () => els.reason.textContent, render: (r) => { win.ShotUI.results.renderBadge(r); const b = els.verdictBadge; return { hidden: b.hidden, cls: b.className, icon: b.innerHTML, text: b.kids.map((k) => k.text).join('') }; }, els };
 }
 const legacy = (extra) => ({ verdict: 'POSSIBLE', hitRate: 0.8763, reason: 'ok', warnings: [], ...extra });
 const tol = (extra) => ({ margin: 1.62, verdict: 'POSSIBLE', capped: false, lowerBound: false, sMax: 4, ...extra });
 
-test('legacy branch: no r.tolerance (absent or null) -> text, class and icon exactly as before', () => {
+const NEUTRAL = /POSSIBLE|NOT CONSISTENT|WON'T WORK|%\s*of shots|hit rate/i;
+
+test('no tolerance (absent or null): the badge is hidden, whatever the engine verdict', () => {
   const { render } = rig();
-  for (const r of [legacy(), legacy({ tolerance: null })]) assert.deepEqual(render(r), { hidden: false, cls: 'verdict-badge v-good', icon: '<g/>', text: 'POSSIBLE · 87%' });
-  assert.equal(render(legacy({ verdict: 'NOT CONSISTENT', hitRate: 0.5 })).text, 'NOT CONSISTENT · 50%');
-  assert.equal(render(legacy({ verdict: "WON'T WORK", hitRate: 0 })).cls, 'verdict-badge v-bad');
-  assert.equal(render(legacy({ verdict: null })).hidden, true);
+  for (const r of [legacy(), legacy({ tolerance: null }), legacy({ verdict: "WON'T WORK", hitRate: 0 })]) assert.equal(render(r).hidden, true);
+  assert.equal(render({ verdict: null, tolerance: tol() }).hidden, true);   // error result
 });
 
-test('real engine results: no tolerance param -> legacy text; tolerance param -> margin text', () => {
+test('real engine results: no tolerance -> hidden badge; tolerance -> neutral "N.N× margin", one style, no verdict word', () => {
   const { render } = rig(), plain = E.evaluate({ ...BASE, hood: HOOD }, 'full');
-  assert.match(render(plain).text, /^(POSSIBLE|NOT CONSISTENT|WON'T WORK) · \d+%$/);
+  assert.equal(render(plain).hidden, true);
   const t = E.evaluate({ ...BASE, hood: HOOD, tolerance: { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 2 } }, 'full'), b = render(t);
-  assert.match(b.text, /^(POSSIBLE|NOT CONSISTENT|WON'T WORK) · \d\.\d× margin$/);
-  assert.ok(b.text.startsWith(t.tolerance.verdict + ' · ' + t.tolerance.margin.toFixed(1) + '×'));
-  assert.equal(b.cls, 'verdict-badge v-' + { 'POSSIBLE': 'good', 'NOT CONSISTENT': 'warn', "WON'T WORK": 'bad' }[t.tolerance.verdict]);
+  assert.match(b.text, /^\d\.\d× margin$/);
+  assert.equal(b.text, t.tolerance.margin.toFixed(1) + '× margin'); assert.equal(b.cls, 'verdict-badge v-neutral'); assert.equal(b.icon, '');
 });
 
-test('tolerance branch: verdict + margin, class follows the margin verdict (not the hit-rate one), bounds get a >= prefix', () => {
+test('tolerance branch: neutral text for every engine verdict, bounds get a >= prefix, margin null -> "out of reach"', () => {
   const { render } = rig();
-  assert.deepEqual(render(legacy({ tolerance: tol() })), { hidden: false, cls: 'verdict-badge v-good', icon: '<g/>', text: 'POSSIBLE · 1.6× margin' });
-  assert.deepEqual(render(legacy({ verdict: 'POSSIBLE', tolerance: tol({ margin: 1.1, verdict: 'NOT CONSISTENT' }) })), { hidden: false, cls: 'verdict-badge v-warn', icon: '<w/>', text: 'NOT CONSISTENT · 1.1× margin' });
-  assert.equal(render(legacy({ tolerance: tol({ margin: 0.4, verdict: "WON'T WORK" }) })).text, "WON'T WORK · 0.4× margin");
-  assert.equal(render(legacy({ tolerance: tol({ margin: 0.996, verdict: "WON'T WORK" }) })).text, "WON'T WORK · 1.00× margin");   // never "1.0×" under a failing verdict
-  assert.equal(render(legacy({ tolerance: tol({ margin: 4, capped: true }) })).text, 'POSSIBLE · ≥ 4× margin');
-  assert.equal(render(legacy({ tolerance: tol({ margin: 1.8, lowerBound: true }) })).text, 'POSSIBLE · ≥ 1.8× margin');
+  for (const v of ['POSSIBLE', 'NOT CONSISTENT', "WON'T WORK"]) assert.deepEqual(render(legacy({ tolerance: tol({ verdict: v }) })), { hidden: false, cls: 'verdict-badge v-neutral', icon: '', text: '1.6× margin' });
+  assert.equal(render(legacy({ tolerance: tol({ margin: 0.996, verdict: "WON'T WORK" }) })).text, '1.00× margin');   // never "1.0×" on a margin still below 1
+  assert.equal(render(legacy({ tolerance: tol({ margin: 4, capped: true }) })).text, '≥ 4× margin');
+  assert.equal(render(legacy({ tolerance: tol({ margin: 1.8, lowerBound: true }) })).text, '≥ 1.8× margin');
+  const o = render(legacy({ tolerance: tol({ margin: null, verdict: "WON'T WORK", cappedBy: 'unreachable' }) }));
+  assert.deepEqual(o, { hidden: false, cls: 'verdict-badge v-neutral', icon: '', text: 'out of reach' });
+  assert.doesNotMatch(o.text, NEUTRAL);
 });
 
-test('tolerance with margin null (cannot be shot): its verdict alone; an error result (verdict null) still hides the badge', () => {
-  const { render } = rig();
-  assert.deepEqual(render(legacy({ tolerance: tol({ margin: null, verdict: "WON'T WORK", cappedBy: 'unreachable' }) })), { hidden: false, cls: 'verdict-badge v-bad', icon: '<b/>', text: "WON'T WORK" });
-  assert.equal(render({ verdict: null, tolerance: tol() }).hidden, true);
-  assert.equal(render(legacy({ tolerance: { margin: 2, sMax: 4 } })).text, 'POSSIBLE · 87%');   // a tolerance object without a verdict is ignored
+test('reason line: hit-rate wording is replaced by the scoring window and the share of free speed used; NO_ARC / TOO_SLOW texts stay', () => {
+  const { render, reason } = rig(), ids = [];
+  for (const [x, y] of [[0, 0], [-40, -20], [30, 50], [-60, -60], [50, -50], [10, 60], [-20, 30], [60, 0]]) {
+    for (const hood of [HOOD, undefined]) {
+      const p = { ...BASE, ...(hood ? { hood } : {}) }; p.mouth = { ...p.mouth, x, y };
+      const r = E.evaluate(p, 'full'); render(r); ids.push(r.code);
+      assert.doesNotMatch(reason(), NEUTRAL, r.code + ': ' + reason());
+      if (r.best && ['OK', 'LOW_HEADROOM', 'MISSES_OFTEN', 'RARELY_SCORES'].includes(r.code))
+        assert.match(reason(), /^Scoring window: launch angle [\d.]+°–[\d.]+°, [\d,]+–[\d,]+ rpm, yaw -?[\d.]+°–-?[\d.]+° · \d+ % of free speed used$/);
+      else assert.equal(reason(), r.reason, r.code);
+    }
+  }
+  assert.ok(ids.some((c) => c === 'OK' || c === 'MISSES_OFTEN' || c === 'RARELY_SCORES' || c === 'LOW_HEADROOM'), 'saw a hit-rate worded result: ' + ids);
+  const fake = { code: 'NO_ARC', reason: 'Every arc from here hits the floor first', verdict: "WON'T WORK" };
+  render(fake); assert.equal(reason(), fake.reason);
 });

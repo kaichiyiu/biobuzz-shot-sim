@@ -1,12 +1,11 @@
-/* BIOBUZZ Shot Sim - #7 tolerance (owner decision 4): the team's +- errors (yaw, launch angle, motor rpm, position) -> margin verdict.
-   Model (SI): { yawDeg, angleDeg, rpm, posIn, source: 'measured' | 'preset' }; all zero = no tolerance = the legacy hit-rate verdict, app unchanged.
-   Browser: window.ShotUI.tolerance and a hook (configSlice 'tolerance'; I8: body.has-tolerance + a note under the motors table).
+/* BIOBUZZ Shot Sim - #7 tolerance (owner decision 4): the team's +- errors (yaw, launch angle, motor rpm, position) -> margin (no verdict).
+   Model (SI): { yawDeg, angleDeg, rpm, posIn, source: 'measured' | 'preset' }; all zero = no tolerance (no margin, no badge).
+   Browser: window.ShotUI.tolerance and a hook (configSlice 'tolerance'; body.has-tolerance).
    Node: module.exports (the pure model). The inputs and the result text live in ui-tolerance-panel.js. */
 (function (root) {
   'use strict';
   var KEYS = ['yawDeg', 'angleDeg', 'rpm', 'posIn'];
   var DEFAULT_POS_IN = 1;
-  var MOTOR_NOTE = 'Verdicts in this table use the old hit-rate model.';
 
   function pos(x) { return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0; }
   function norm(raw) {
@@ -40,10 +39,10 @@
     return isFinite(v) ? v : NaN;   // NaN = junk: the caller keeps the old value
   }
 
-  var api = { norm: norm, isActive: isActive, toParams: toParams, presetFor: presetFor, calibSpread: calibSpread, parseField: parseField, KEYS: KEYS, MOTOR_NOTE: MOTOR_NOTE };
+  var api = { norm: norm, isActive: isActive, toParams: toParams, presetFor: presetFor, calibSpread: calibSpread, parseField: parseField, KEYS: KEYS };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
 
-  var cur = norm(null), ctx = null, last = null, panel = null, note = null, UI = root.ShotUI = root.ShotUI || {};
+  var cur = norm(null), ctx = null, last = null, panel = null, UI = root.ShotUI = root.ShotUI || {};
   function calibRecord() {
     if (UI.calibReport && UI.calibReport.record) return UI.calibReport.record();
     var s = (UI.hooks || []).map(function (h) { return h.configSlice; }).filter(function (c) { return c && c.key === 'calibration'; })[0];
@@ -52,21 +51,14 @@
   function refresh() {
     var on = isActive(cur);
     try { document.body.classList.toggle('has-tolerance', on); } catch (e) { /* no body */ }
-    if (note) { note.hidden = !on; note.textContent = on ? MOTOR_NOTE : ''; }
     if (panel) panel.sync();
   }
   function set(m, recalc) { cur = norm(m); refresh(); if (recalc && ctx) ctx.recalc(); }
   function say(t) { if (panel) panel.say(t); }
-  // the reason line under the badge drops its hit-rate wording while a margin is shown. Only the legacy sentences are replaced (never a hood error text).
-  function fixReason() {
-    var el = document.getElementById('reason'), txt = last && last.tolerance && UI.tolPanel ? UI.tolPanel.reason(last.tolerance, last) : null;
-    if (el && txt && /^(Scores|Only) \d+% of shots/.test(el.textContent || '')) el.textContent = txt;
-  }
-  // the app re-renders results on a units switch without calling hooks: watch the reason line and the units buttons (same precedent as ui-entry)
+  // the app re-renders results on a units switch without calling hooks: watch the units buttons (same precedent as ui-entry)
   function watch() {
     if (typeof MutationObserver !== 'function') return;
-    var rs = document.getElementById('reason'), us = document.querySelector('[data-key="units"]');
-    if (rs) new MutationObserver(fixReason).observe(rs, { childList: true, characterData: true, subtree: true });
+    var us = document.querySelector('[data-key="units"]');
     if (us) new MutationObserver(function () { if (panel) { panel.sync(); panel.result(last); } }).observe(us, { attributes: true, attributeFilter: ['aria-pressed'], subtree: true });
   }
 
@@ -75,11 +67,6 @@
     name: 'tolerance',
     onStart: function (c) {
       ctx = c;
-      var cap = document.getElementById('motorsCaption');
-      if (cap && cap.parentNode) {
-        note = document.createElement('p'); note.id = 'tolMotorsNote'; note.className = 'help'; note.hidden = true;
-        cap.parentNode.appendChild(note);
-      }
       var host = document.getElementById('toleranceHost');
       if (host && UI.tolPanel) {
         panel = UI.tolPanel.mount(host, {
@@ -113,7 +100,7 @@
       return p;
     },
     onChange: function () { if (panel) { panel.sync(); panel.result(last); } },   // units switch: values and result text in the new units (the legacy render redoes #reason)
-    onResult: function (r) { last = r; if (panel) panel.result(r); fixReason(); },   // runs after the legacy render
+    onResult: function (r) { last = r; if (panel) panel.result(r); },
     configSlice: {
       key: 'tolerance',
       get: function () { return isActive(cur) ? norm(cur) : null; },

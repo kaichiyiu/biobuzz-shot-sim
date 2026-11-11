@@ -10,7 +10,7 @@
   ];
   var PRESETS = [['dialed', 'Dialed'], ['typical', 'Typical'], ['rough', 'Rough']];
   var AXIS = { angle: 'launch angle', rpm: 'motor speed', yaw: 'aim (yaw)', along: 'position along the shot line' };
-  var HELP = 'How far off can your robot be? Margin 1.0× means your ± errors just fit inside the scoring window; 2× means you could be twice as sloppy. Leave all empty to keep the hit-rate model.';
+  var HELP = 'How far off can your robot be? Margin 1.0× means your ± errors just fit inside the scoring window; 2× means you could be twice as sloppy. Leave all empty to see no margin.';
   var GUESS = 'Dialed / Typical / Rough fill starting values (2σ of the old precision presets): a guess — measure your robot.';
   var CAL_HINT = 'Calibration spread is a 90 % half-width (about 1.6σ) of the rpm scatter you measured.';
 
@@ -31,8 +31,8 @@
     if (!t) return out;
     out.preview = t.mode === 'coarse';
     if (t.margin == null) {
-      out.head = t.verdict;
-      if (t.cappedBy === 'unreachable') out.notes.push('The selected motor cannot produce this shot, so there is no margin. Pick a faster motor or more gearing.');
+      out.head = 'out of reach';
+      if (t.cappedBy === 'unreachable') out.notes.push('Speed beyond the motor: the selected motor cannot produce this shot, so there is no margin. Pick a faster motor or more gearing.');
       return out;
     }
     out.head = (t.capped ? '≥ ' + t.sMax : (t.lowerBound ? '≥ ' : '') + fmtMargin(t.margin)) + '×';
@@ -51,7 +51,7 @@
     if (pos && pos.lateralIn != null) bits.push('±' + u.fmtLen(pos.lateralIn, 1) + ' sideways');
     if (pos && pos.alongIn) bits.push('−' + u.fmtLen(-pos.alongIn[0], 1) + ' / +' + u.fmtLen(pos.alongIn[1], 1) + ' along the line');
     if (bits.length) out.position = 'Position you can tolerate: ' + bits.join(', ');
-    if (t.cappedBy === 'headroom') out.notes.push('Verdict held at NOT CONSISTENT: the motor needs more than ' + Math.round(((opts && opts.downgrade) || 0.92) * 100) + ' % of its usable free speed, so it cannot hold speed between shots.');
+    if (t.cappedBy === 'headroom') out.notes.push('The motor is near its limit: it needs more than ' + Math.round(((opts && opts.downgrade) || 0.92) * 100) + ' % of its usable free speed, so it may not hold speed between shots.');
     var b = t.bestSetpoint;
     if (b && b.margin != null) {
       if (t.margin != null && b.margin <= t.margin + 1e-9) out.best = 'The current aim is already the most forgiving shot for your accuracy.';
@@ -61,15 +61,6 @@
       }
     }
     return out;
-  }
-
-  // the line under the badge when a margin is shown (the legacy reason talks about the hit rate): "Margin 0.7× · limited by launch angle, low side · 62 % motor headroom"
-  function reason(t, r) {
-    if (!t || t.margin == null) return null;
-    var h = r && r.motor && r.motor.headroom, bits = ['Margin ' + (t.capped ? '≥ ' + t.sMax : (t.lowerBound ? '≥ ' : '') + fmtMargin(t.margin)) + '×'];
-    if (!t.capped && t.limitingAxis) bits.push('limited by ' + AXIS[t.limitingAxis] + ', ' + side(t.limitingAxis, t.limitingSide));
-    if (typeof h === 'number' && isFinite(h)) bits.push(t.cappedBy === 'headroom' ? 'the motor runs at ' + Math.round(h * 100) + ' % of free speed — no headroom as the battery drains' : Math.round((1 - h) * 100) + ' % motor headroom');
-    return bits.join(' · ');
   }
 
   function el(tag, attrs, kids) {
@@ -127,7 +118,7 @@
     };
   }
 
-  var api = { describe: describe, reason: reason, fmtMargin: fmtMargin, mount: mount, FIELDS: FIELDS, PRESETS: PRESETS, CAL_HINT: CAL_HINT };
+  var api = { describe: describe, fmtMargin: fmtMargin, mount: mount, FIELDS: FIELDS, PRESETS: PRESETS, CAL_HINT: CAL_HINT };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
   root.ShotUI = root.ShotUI || {};
   root.ShotUI.tolPanel = api;
