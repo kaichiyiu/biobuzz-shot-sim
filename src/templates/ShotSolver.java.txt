@@ -25,7 +25,9 @@ public final class ShotSolver {
     static final double HOOD_ANGLE_DEG = {{HOOD_ANGLE_DEG}};
     static final double[] HOOD_D_IN = { {{HOOD_D_IN}} };    // robot distance, inches (sorted)
     static final double[] HOOD_DEG = { {{HOOD_DEG}} };      // launch angle at those distances, degrees
-    static final double RPM_PER_MPS = {{RPM_PER_MPS}};  // motor rpm per m/s of exit speed
+    static final double RPM_PER_MPS = {{RPM_PER_MPS}};  // motor rpm per m/s of exit speed (used when the per-rpm map below is empty)
+    static final double[] RPM_MAP_V = { {{RPM_MAP_V}} };      // per-rpm calibration only: exit speed (m/s, ascending) ...
+    static final double[] RPM_MAP_RPM = { {{RPM_MAP_RPM}} };  // ... and the motor rpm that gives it (piecewise linear between the nodes, end slope beyond them)
     static final double TICKS_PER_MOTOR_REV = {{TICKS_PER_MOTOR_REV}};
     static final double MOUTH_FORWARD_IN = {{MOUTH_FORWARD_IN}};   // robot distance minus mouth distance, inches
 
@@ -61,6 +63,14 @@ public final class ShotSolver {
 
     /** Aim height (m above the mouth) for a robot distance: linear interpolation in the aim table. */
     static double aimFor(double d) { return AIM_D_IN.length == 0 ? AIM_Z_M : interp(AIM_D_IN, AIM_Z, d); }
+
+    /** Motor rpm for an exit speed: piecewise-linear map when the calibration is per-rpm, else v * RPM_PER_MPS. */
+    static double rpmFor(double v) {
+        int n = RPM_MAP_V.length, i = 0;
+        if (n < 2) return v * RPM_PER_MPS;
+        if (v >= RPM_MAP_V[n - 1]) i = n - 2; else if (v > RPM_MAP_V[0]) while (i < n - 2 && v >= RPM_MAP_V[i + 1]) i++;
+        return RPM_MAP_RPM[i] + (v - RPM_MAP_V[i]) * (RPM_MAP_RPM[i + 1] - RPM_MAP_RPM[i]) / (RPM_MAP_V[i + 1] - RPM_MAP_V[i]);
+    }
 
     // acceleration of the ball at velocity (ux, uz): drag against the velocity, lift perpendicular to it
     private static void accel(double ux, double uz, double wr, double kd, double kl0, double[] out) {
@@ -124,7 +134,7 @@ public final class ShotSolver {
         r.ok = hi - lo <= V_TOL;
         if (!r.ok) return r;
         r.vMps = (lo + hi) / 2;
-        r.motorRpm = r.vMps * RPM_PER_MPS;
+        r.motorRpm = rpmFor(r.vMps);
         r.ticksPerSec = r.motorRpm / 60 * TICKS_PER_MOTOR_REV;
         return r;
     }

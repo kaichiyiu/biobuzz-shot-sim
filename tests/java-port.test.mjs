@@ -18,16 +18,18 @@ const XS = { stepIn: 4, mouthForwardIn: 5.5 };
 const run = (cmd, args, input) => spawnSync(cmd, args, { input, encoding: 'utf8', maxBuffer: 1 << 24 });
 const probe = (cmd, args) => { const r = run(cmd, args); return !r.error && r.status === 0 ? r : null; };
 const TOOL = probe('javac', ['-version']) ? 'javac' : (() => { const m = probe('java', ['--list-modules']); return m && /^jdk\.compiler@/m.test(m.stdout) ? 'source' : null; })();
-const mk = (P) => { const rows = E.exportPoints(P, XS).map((q) => E.exportPoint(P, q, XS)); return S.constantsFrom(P, rows, E); };
+const CURVE = [[1000, 0.5], [2000, 0.45], [3000, 0.36], [4000, 0.30], [5500, 0.27]];   // F2: per-rpm calibration -> rpm(v) map arrays in the Java source
+const mk = (P, curve) => { const rows = E.exportPoints(P, XS).map((q) => E.exportPoint(P, q, XS, curve)); return S.constantsFrom(P, rows, E, curve); };
 const MODES = [['adjustable', mk({ ...BASE, hood: { mode: 'adjustable', minDeg: 45, maxDeg: 80 } })], ['fixed', mk({ ...BASE, hood: { mode: 'fixed', angleDeg: 62.5 } })],
-  ['topspin fixed', mk({ ...BASE, shooter: { ...BASE.shooter, spin: 'top' }, hood: { mode: 'fixed', angleDeg: 62.5 } })]];
+  ['topspin fixed', mk({ ...BASE, shooter: { ...BASE.shooter, spin: 'top' }, hood: { mode: 'fixed', angleDeg: 62.5 } })],
+  ['per-rpm map adjustable', mk({ ...BASE, hood: { mode: 'adjustable', minDeg: 45, maxDeg: 80 } }, CURVE)], ['per-rpm map fixed', mk({ ...BASE, hood: { mode: 'fixed', angleDeg: 62.5 } }, CURVE)]];
 // 20 distances: the table range with irregular spacing, plus one beyond reach and one inside the mouth-forward offset
 const D20 = Array.from({ length: 18 }, (_, i) => 14 + i * 2.6 + (i % 3) * 0.37).concat([4000, 3]);
 
 for (const [name, c] of MODES) {
   test(`java port ${name}: 20 vectors match the JS reference to 1e-6 relative (speed, angle, rpm, ticks; ok and iterations equal)`,
     { skip: TOOL ? false : 'no Java compiler on this machine (javac / java 11+ with jdk.compiler)' }, () => {
-      assert.equal(D20.length, 20);
+      assert.equal(D20.length, 20); assert.equal(!!c.rpmMap, name.startsWith('per-rpm'));
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'javaport-')), file = path.join(dir, 'ShotSolver.java');
       try {
         fs.writeFileSync(file, J.renderJava(c, TEMPLATE));

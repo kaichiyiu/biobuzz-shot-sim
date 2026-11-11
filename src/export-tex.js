@@ -82,7 +82,7 @@
     for (j = 0; j < per; j++) head.push('$v$ [m/s]', '$n$ [rpm]');
     return 'With the calibrated per-rpm factor $\\eta(n)$ the exit speed $v(n) = \\eta(n)\\,\\pi D g\\, n / 60$ is not proportional to $n$, so the solver replaces the constant $\\kappa$ by the inverse map $n(v)$, the motor rpm for an exit speed ' +
       '(obtained by inverting $v(n)$, the same inversion as the export table rows). It is piecewise linear: between two nodes $(v_j, n_j)$ and $(v_{j+1}, n_{j+1})$ of the table below\n\\begin{equation}\n  n(v) = n_j + (v - v_j)\\,\\frac{n_{j+1} - n_j}{v_{j+1} - v_j},\n\\end{equation}\n' +
-      'and beyond the first or last node it continues with the slope of the end segment. The ' + m.length + ' nodes cover $v = ' + tn(m[0][0], 4) + '$ to $' + tn(m[m.length - 1][0], 4) + '$ m/s and were refined until linear interpolation matches the exact inverse to 0.02\\,\\% at three points per interval ' +
+      'and beyond the first or last node it continues with the slope of the end segment. The ' + m.length + ' nodes cover $v = ' + tn(m[0][0], 4) + '$ to $' + tn(m[m.length - 1][0], 4) + '$ m/s and were refined until linear interpolation matches the exact inverse to 0.05\\,\\% at three points per interval ' +
       '(measured maximum error below 0.1\\,\\%).\n' + table(head, rows);
   }
 

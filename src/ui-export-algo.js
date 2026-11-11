@@ -1,5 +1,5 @@
 /* BIOBUZZ Shot Sim - #4 "On-robot algorithm" section under the export table (G4). Browser: window.ShotUI.exportAlgo (+ hook). Node: module.exports (pure helpers).
-   Pure: prepare(rows, params, E) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params) (H2, derivation .tex)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
+   Pure: prepare(rows, params, E, etaCurve?) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params) (H2, derivation .tex)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
          summary(list) -> {n, inside, outside, noWindow, text}   midpointQs(E, params, rows, c) -> mouth points between the table rows   runChecks(E, params, c, qs, {etaCurve, schedule, onPoint, onDone}) -> {cancel}
    Browser: setTable({rows, params, cfg, etaCurve, ready}) is called by ui-export.js when a table is finished; the section lives in a child div of #exportHost.
    Design: process_docs/issue-4/design.md section 14. */
@@ -11,10 +11,10 @@
   }
   var FILES = { java: ['ShotSolver.java', 'text/x-java-source'], csv: ['biobuzz-solver-vectors.csv', 'text/csv'], tex: ['biobuzz-derivation.tex', 'application/x-tex'] };
 
-  function prepare(rows, params, E) {
-    var c = lib().S.constantsFrom(params, rows, E), fin = function (x) { return typeof x === 'number' && isFinite(x); };
-    var ok = fin(c.rpmPerMps) && fin(c.ticksPerMotorRev) && c.aim.length > 0 && (c.hood.mode === 'fixed' ? fin(c.hood.angleDeg) : c.hood.table.length > 0);
-    return { c: c, usable: ok, reason: ok ? '' : 'The export table has no reachable row, so the solver has nothing to be built from.' };
+  function prepare(rows, params, E, etaCurve) {
+    var c = lib().S.constantsFrom(params, rows, E, etaCurve), fin = function (x) { return typeof x === 'number' && isFinite(x); };
+    var ok = !c.rpmMapError && fin(c.rpmPerMps) && fin(c.ticksPerMotorRev) && c.aim.length > 0 && (c.hood.mode === 'fixed' ? fin(c.hood.angleDeg) : c.hood.table.length > 0);
+    return { c: c, usable: ok, reason: ok ? '' : c.rpmMapError || 'The export table has no reachable row, so the solver has nothing to be built from.' };
   }
   function javaText(c, tpl) {
     if (typeof tpl !== 'string' || !tpl) throw new Error('The ShotSolver.java template is not loaded.');
@@ -170,7 +170,7 @@
   function setTable(d) {
     if (job) job.cancel();
     data = d; results = [];
-    prep = d && d.ready ? prepare(d.rows, d.params, ctx.engine) : null;
+    prep = d && d.ready ? prepare(d.rows, d.params, ctx.engine, d.etaCurve) : null;
     var host = document.getElementById('exportHost');
     if (box && host && box.parentNode !== host) host.appendChild(box);
     render();

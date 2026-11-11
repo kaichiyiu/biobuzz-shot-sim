@@ -1,7 +1,11 @@
 /* BIOBUZZ Shot Sim - #4 on-robot flight solver, JS reference (same equations as src/templates/ShotSolver.java.txt). Browser: window.ExportSolver. Node: module.exports.
    Integrates EXACTLY the engine's flight model (engine.js aeroK + flyFloat): quadratic drag + lift perpendicular to the velocity, spin ratio Sr = S0 v0 / |v| clamped to
    +-clSMax, g, RK4 at the engine step dt. Frame: x horizontal from the mouth, z above the mouth, SI units. Maths: process_docs/issue-4/design.md sections 8-10.
-   constantsFrom(params, rows, E) -> SolverConstants   rows = ExportRow[], E = ShotEngine. No usable row -> NaN fields (solveSpeed then gives ok:false).
+   constantsFrom(params, rows, E, etaCurve?) -> SolverConstants   rows = ExportRow[], E = ShotEngine. No usable row -> NaN fields (solveSpeed then gives ok:false).
+     etaCurve (per-rpm calibration, [[rpm, factor], ...]) -> rpmMap = [[vMps, motorRpm], ...] monotone piecewise-linear n(v) built from CalibCore.motorRpmFromExitSpeed (buildRpmMap); null without a curve (then rpmPerMps is used);
+     rpmMapError (text) and rpmMap null when the curve makes exit speed non-monotone in rpm (no unique rpm per speed).
+   rpmFor(c, v) -> motor rpm for exit speed v: map interpolation (linear extrapolation with the end slope outside), else v * rpmPerMps.
+   buildRpmMap(E, params, curve, vLo, vHi) -> {map, error}   nodes at the curve's kink speeds, split to <= 1 m/s, refined until the chord is within RPM_TOL (5e-4) of the exact inverse at 1/4, 1/2, 3/4 of every interval.
    aim: [[dRobotIn, aimZM]] per reachable row = height of THIS integrator's path (row.launchDeg, v = row.exitSpeedMps.c) at rho = row.dMouthIn; aimZM = median (fallback only).
    aimFor(c, dRobotIn) -> m   linear in the aim table, flat beyond the ends (c.aimZM when the table is empty).
    angleFor(c, dRobotIn) -> deg       fixed hood: constant; adjustable (or no hood): linear interpolation in c.hood.table [[dRobotIn, deg]], flat beyond the ends.
@@ -9,10 +13,11 @@
    heightAt(c, thetaDeg, v0, rho) -> z at x = rho (-Infinity if never reached)   trajectory(c, thetaDeg, v0, tEnd) -> [[x, z, vx, vz], ...] like E._internal.flyFloat. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.ExportSolver = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  else root.ExportSolver = factory(root);
+})(typeof self !== 'undefined' ? self : this, function (ROOT) {
   'use strict';
   var IN_M = 0.0254, DEG = Math.PI / 180;
+  var RPM_TOL = 5e-4, MAP_MAX_NODES = 160;   // per-rpm map: relative chord error aimed at (measured bound 1e-3, design 15), node cap
   var LIM = { T_MAX: 2.6, V_LO: 2, V_HI: 16, V_STEP: 0.25, V_TOL: 1e-6, MAX_IT: 80 };   // flight time cap = engine tMax; speed range = engine table range; scan step; bisection stop; flight cap (worst case 1 + 56 scan + 18 bisection = 75)
 
   function fin(x) { return typeof x === 'number' && isFinite(x); }
@@ -101,12 +106,57 @@
     res.ok = hi - lo <= LIM.V_TOL;
     if (!res.ok) return res;
     res.vMps = (lo + hi) / 2;
-    res.motorRpm = res.vMps * c.rpmPerMps;
+    res.motorRpm = rpmFor(c, res.vMps);
     res.ticksPerSec = res.motorRpm / 60 * c.ticksPerMotorRev;
     return res;
   }
 
-  function constantsFrom(params, rows, E) {
+  // motor rpm for an exit speed: the piecewise-linear map when there is one (linear continuation with the end slope outside it), else the single factor
+  function rpmFor(c, v) {
+    var m = c.rpmMap, n = m ? m.length : 0, i = 0;
+    if (n < 2) return v * c.rpmPerMps;
+    if (v >= m[n - 1][0]) i = n - 2; else if (v > m[0][0]) while (i < n - 2 && v >= m[i + 1][0]) i++;
+    return m[i][1] + (v - m[i][0]) * (m[i + 1][1] - m[i][1]) / (m[i + 1][0] - m[i][0]);
+  }
+
+  // rpm where v(n) = s F(n) n stops increasing, or -1. On a piece F = F0 + b (n - n0), v' = s (F + n F') is linear in n, so it is enough to test both ends of every piece (F flat and > 0 beyond the curve's ends)
+  function nonMonotoneAt(curve) {
+    var i, b;
+    for (i = 0; i < curve.length; i++) if (!(curve[i][1] > 0)) return curve[i][0];
+    for (i = 0; i + 1 < curve.length; i++) {
+      if (!(curve[i + 1][0] > curve[i][0])) return curve[i][0];
+      b = (curve[i + 1][1] - curve[i][1]) / (curve[i + 1][0] - curve[i][0]);
+      if (!(curve[i][1] + curve[i][0] * b > 0 && curve[i + 1][1] + curve[i + 1][0] * b > 0)) return curve[i][0];
+    }
+    return -1;
+  }
+
+  function msg(rpm) { return 'The calibrated eta curve makes the exit speed fall as the rpm rises near ' + Math.round(rpm) + ' rpm (v(n) is not increasing), so one speed has no unique rpm. Check or re-fit the per-rpm curve; the on-robot algorithm is not offered for it.'; }
+
+  // n(v) for a per-rpm eta curve: nodes at the kinks v(n_i) of the curve, intervals <= 1 m/s, adaptive bisection until the chord matches the exact inverse within RPM_TOL at 1/4, 1/2, 3/4
+  function buildRpmMap(E, params, curve, vLo, vHi) {
+    var CC = typeof module === 'object' && module.exports ? require('./calib-core.js') : ROOT.CalibCore, sh = CC.shooterOf(E, params).sh;
+    function n(v) { return CC.motorRpmFromExitSpeed(v, sh, curve); }
+    var bad0 = nonMonotoneAt(curve);
+    if (bad0 >= 0) return { map: null, error: msg(bad0) };
+    var cuts = [vLo, vHi], bounds = [vLo], nodes = [[vLo, n(vLo)]], i, j, k;
+    curve.forEach(function (p) { var v = CC.exitSpeedFromMotorRpm(p[0], sh, curve); if (v > vLo && v < vHi) cuts.push(v); });
+    cuts.sort(function (a, b) { return a - b; });
+    for (i = 1; i < cuts.length; i++) { k = Math.ceil((cuts[i] - cuts[i - 1]) / 1); for (j = 1; j <= k; j++) bounds.push(cuts[i - 1] + (cuts[i] - cuts[i - 1]) * j / k); }
+    function refine(a, na, b, nb, d) {
+      var bad = false;
+      [0.25, 0.5, 0.75].forEach(function (t) { var ex = n(a + t * (b - a)); if (!(Math.abs(ex - (na + t * (nb - na))) <= RPM_TOL * ex)) bad = true; });
+      if (bad && d < 14 && nodes.length < MAP_MAX_NODES) { var m = (a + b) / 2, nm = n(m); refine(a, na, m, nm, d + 1); refine(m, nm, b, nb, d + 1); }
+      else nodes.push([b, nb]);
+    }
+    for (i = 1; i < bounds.length; i++) refine(bounds[i - 1], nodes[nodes.length - 1][1], bounds[i], n(bounds[i]), 0);
+    for (i = 0; i < nodes.length; i++) if (!(isFinite(nodes[i][1]) && (i === 0 || nodes[i][1] > nodes[i - 1][1]))) {
+      return { map: null, error: msg(nodes[Math.max(i - 1, 0)][1]) };
+    }
+    return { map: nodes, error: '' };
+  }
+
+  function constantsFrom(params, rows, E, etaCurve) {
     var I = E._internal, np = I.normParams(params), bp = E.ballProps(np.ballId), A = E.constants().aero;
     var use = (rows || []).filter(function (r) { return r && r.reachable && r.motorRpm && r.exitSpeedMps && r.exitSpeedMps.c > 0; });
     var h0In = np.mouth.height, hd = params && params.hood;
@@ -127,8 +177,14 @@
       return [r.dRobotIn, heightAt(c, r.launchDeg, r.exitSpeedMps.c, r.dMouthIn * IN_M)];
     }).filter(function (p) { return fin(p[1]); }).sort(function (p, q) { return p[0] - q[0]; });
     c.aimZM = median(c.aim.map(function (p) { return p[1]; }));
+    c.rpmMap = null; c.rpmMapError = '';
+    if (etaCurve && etaCurve.length && use.length) {   // per-rpm calibration: n(v) over the table's exit-speed range, 20 % / 25 % margin, inside the solver's own speed range
+      var vl = Math.max(LIM.V_LO, 0.8 * Math.min.apply(null, use.map(function (r) { return r.exitSpeedMps.lo; }))), vh = Math.min(LIM.V_HI, 1.25 * Math.max.apply(null, use.map(function (r) { return r.exitSpeedMps.hi; })));
+      var b = buildRpmMap(E, params, etaCurve, vl, vh);
+      c.rpmMap = b.map; c.rpmMapError = b.error;
+    }
     return c;
   }
 
-  return { constantsFrom: constantsFrom, angleFor: angleFor, aimFor: aimFor, solveSpeed: solveSpeed, heightAt: heightAt, trajectory: trajectory, LIMITS: LIM };
+  return { constantsFrom: constantsFrom, buildRpmMap: buildRpmMap, rpmFor: rpmFor, angleFor: angleFor, aimFor: aimFor, solveSpeed: solveSpeed, heightAt: heightAt, trajectory: trajectory, LIMITS: LIM };
 });
