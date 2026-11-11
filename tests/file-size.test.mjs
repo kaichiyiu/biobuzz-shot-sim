@@ -37,6 +37,9 @@ const UI = [
   'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',
   // tolerance UI (issue #7, I6)
   'src/ui-tolerance.js', 'src/ui-tolerance-panel.js', 'tests/ui-tolerance.test.mjs', 'tests/ui-results-badge.test.mjs',
+  // field margin map (issue #15, J2-J3)
+  'src/worker-margin.js', 'src/margin-runner.js', 'src/ui-margin-map.js', 'src/ui-margin-map-draw.js',
+  'tests/worker-margin.test.mjs', 'tests/margin-runner.test.mjs', 'tests/ui-margin-map.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));

@@ -44,3 +44,10 @@
 /* I8: with a tolerance the margin verdict replaces the hit-rate model on the main screen (Show the math still lists the hit rate) */
 body.has-tolerance .ctl:has(> #precHelp) { display: none; }
 body.has-tolerance .motors table :is(th, td):nth-child(7) { display: none; }   /* motors table: Hit rate (7th of 8 columns) */
+/* field margin map (ui-margin-map): toolbar controls, tooltip, legend swatch; the legacy coarse Verdict map is hidden once the module has loaded (no verdicts) */
+.mm-bar { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mm-colour { font: 500 13px/1.2 var(--cond); color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+.mm-colour select { font: inherit; }
+.mm-tip { position: absolute; z-index: 5; pointer-events: none; max-width: 190px; padding: 6px 8px; border-radius: 4px; font: 500 12px/1.35 var(--cond); background: var(--ink); color: var(--robot); box-shadow: var(--shadow); }
+.mm-hatch { background: repeating-linear-gradient(45deg, var(--ink-3) 0 1px, transparent 1px 4px); }
+body.has-margin-map :is(#scanBtn, #scanProgress, #heatLegend) { display: none; }
