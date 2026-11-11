@@ -7,7 +7,7 @@
  * verdictOf(margin, bands = BANDS) -> E.VERDICTS string   margin >= ok POSSIBLE, >= mid NOT CONSISTENT, else WON'T WORK (null -> WON'T WORK)
  * result(view, sel, res, tn, { p, mo, sh, bp }) -> ToleranceResult | null (null when tn is null)
  *   { margin, boxMargin, alongMargin, limitingAxis: 'yaw'|'angle'|'rpm'|'along'|null, limitingSide: -1|1|null, lowerBound, capped, sMax,
- *     perAxis: { yaw, angle, rpm }, position: { lateralIn, alongIn: [-minusIn, plusIn] | null }, verdict, bands, cappedBy: null|'unreachable'|'headroom',
+ *     perAxis: { yaw, angle, rpm }, position: { lateralIn (sideways move the aim window absorbs: perAxis.yaw x the position tolerance's yaw share; null without posIn), alongIn: [-minusIn, plusIn] | null }, verdict, bands, cappedBy: null|'unreachable'|'headroom',
  *     resolution, basis: 'rect', entryRule, mode: 'full'|'coarse', viewLimited, tolerance, setpoint, along, bestSetpoint }
  *   margin null = no aim, or the aim needs more speed than the motor has (cappedBy 'unreachable'; boxMargin / alongMargin then describe the uncapped aim).
  *   margin 1.0 = just fits; >= sMax (4) is reported as 4 with capped = true; lowerBound = the binding term only bounds the margin from below
@@ -152,7 +152,8 @@
         if (useAlong) { out.limitingAxis = 'along'; out.limitingSide = al.minusIn <= al.plusIn ? -1 : 1; out.lowerBound = (al.minusIn <= al.plusIn ? al.minusEnd : al.plusEnd) !== 'fail'; }
         else { out.limitingAxis = bx.limitingAxis == null ? null : AXES[bx.limitingAxis]; out.limitingSide = bx.limitingSide; out.lowerBound = bx.viewLimited; }
       }
-      out.position = { lateralIn: K.wY > 0 ? res.distIn * Math.tan(Math.min(89, Math.min(bx.s, SMAX) * K.wY) * RAD) : null, alongIn: al ? [-al.minusIn, al.plusIn] : null };
+      // sideways position you can tolerate: the position share of the YAW axis margin alone (it rides on the aim window), so it does not move with the angle / rpm tolerances
+      out.position = { lateralIn: tn.posIn > 0 ? res.distIn * Math.tan(Math.min(89, Math.min(bx.perAxis[2], SMAX) * Math.atan(tn.posIn / Math.max(res.distIn || 0, 1e-9)) / RAD) * RAD) : null, alongIn: al ? [-al.minusIn, al.plusIn] : null };
       out.setpoint = { thetaDeg: sp.theta, v: sp.v, motorRpm: rpmC, yawDeg: sp.yaw, yawOffsetDeg: yo, cell: sp.cell, moved: sp.moved };
       if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx, rpmC);
     }

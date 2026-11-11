@@ -62,7 +62,7 @@ test('synthetic view: margins match the hand calculation (angle, speed, yaw brea
   assert.ok(Math.abs(r.boxMargin - yaw) < 1e-6, `${r.boxMargin} vs ${yaw}`);   // yaw is the tightest: 2 cells above / 4 per s = 0.5
   assert.deepEqual([r.limitingAxis, r.limitingSide, r.viewLimited, r.lowerBound, r.capped], ['yaw', 1, false, false, false]);
   assert.equal(r.alongMargin, null); assert.equal(r.position.alongIn, null); assert.equal(r.margin, r.boxMargin);
-  assert.ok(Math.abs(r.position.lateralIn - 100 * Math.tan(r.boxMargin * 1 * Math.PI / 180)) < 1e-9);
+  assert.equal(r.position.lateralIn, null);   // no position tolerance: no sideways figure
   assert.equal(r.verdict, V[2]); assert.equal(r.basis, 'rect'); assert.equal(r.mode, 'full'); assert.deepEqual(r.bands, { ok: 1.25, mid: 1 });
 });
 
@@ -75,6 +75,11 @@ test('synthetic view: lateral position adds atan(posIn / dist) degrees to the ya
   const c = run({ yawDeg: 0.5, posIn: 1.75 }, res0(), view, sel0(view));
   assert.ok(Math.abs(c.perAxis.yaw - 2 * YS / wY) < 1e-6, `${c.perAxis.yaw} vs ${2 * YS / wY}`);
   assert.ok(b.boxMargin > 0);
+  // position.lateralIn = d * tan(perAxis.yaw * atan(pos / d)): the yaw axis alone, so it ignores the angle / rpm tolerances
+  const lat = (m) => 100 * Math.tan(m * Math.atan(1.75 / 100));
+  assert.ok(Math.abs(c.position.lateralIn - lat(c.perAxis.yaw)) < 1e-9, String(c.position.lateralIn));
+  const d = run({ yawDeg: 0.5, posIn: 1.75, angleDeg: 8, rpm: 60 }, res0(), view, sel0(view));
+  assert.ok(d.boxMargin < c.boxMargin && Math.abs(d.position.lateralIn - c.position.lateralIn) < 1e-12, `${d.position.lateralIn} vs ${c.position.lateralIn}`);
 });
 
 test('synthetic view: an axis with tolerance 0 is unconstrained; rpm tolerance >= rpm caps the low side at the grid (view limited)', () => {

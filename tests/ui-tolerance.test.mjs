@@ -46,7 +46,7 @@ test('describe: margin text, limiter in words, per-axis, position, best setpoint
   assert.equal(d.head, '0.3×'); assert.equal(d.preview, false);   // 0.25: angle low side, run 2 cells / 8 cells per s (was (2+1)/8 = 0.375 -> 0.4)
   assert.match(d.limit, /^Limited by launch angle, low side\./);
   assert.match(d.axes, /^Each error alone: launch angle 0\.8× · motor speed 0\.4× · aim \(yaw\) 1\.1×$/);
-  assert.match(d.position, /^Position you can tolerate: ±0\.8 in sideways, −3\.3 in \/ \+8\.3 in along the line$/);
+  assert.match(d.position, /^Position you can tolerate: ±2\.1 in sideways, −3\.3 in \/ \+8\.3 in along the line$/);
   assert.match(d.best, /^For your accuracy the most forgiving shot is 70\.0°, [\d,]+ rpm, yaw offset \+3\.0° — margin 0\.4×$/);
   const ok = run(TOL).tolerance, d2 = PN.describe(ok, U);
   assert.match(d2.head, /^\d\.\d×$/);
