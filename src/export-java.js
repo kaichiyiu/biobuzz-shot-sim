@@ -22,7 +22,7 @@
 
   var SCALARS = { MASS_KG: 'massKg', AREA_M2: 'areaM2', RHO: 'rho', CD: 'cd', CL_SLOPE: 'clSlope', CL_SMAX: 'clSMax', G: 'g', S0: 'S0', DT: 'dt',
     H0_M: 'h0M', AIM_Z_M: 'aimZM', RPM_PER_MPS: 'rpmPerMps', TICKS_PER_MOTOR_REV: 'ticksPerMotorRev', MOUTH_FORWARD_IN: 'mouthForwardIn' };
-  var PLACEHOLDERS = Object.keys(SCALARS).concat(['HOOD_FIXED', 'HOOD_ANGLE_DEG', 'HOOD_D_IN', 'HOOD_DEG']).sort();
+  var PLACEHOLDERS = Object.keys(SCALARS).concat(['HOOD_FIXED', 'HOOD_ANGLE_DEG', 'HOOD_D_IN', 'HOOD_DEG', 'AIM_D_IN', 'AIM_Z']).sort();
 
   function values(c) {
     var v = {}, h = c && c.hood;
@@ -36,6 +36,9 @@
     var t = h.mode === 'fixed' ? [] : h.table;
     v.HOOD_D_IN = t.map(function (p) { return literal(p[0]); }).join(', ');
     v.HOOD_DEG = t.map(function (p) { return literal(p[1]); }).join(', ');
+    var aim = c.aim || [];
+    v.AIM_D_IN = aim.map(function (p) { return literal(p[0]); }).join(', ');
+    v.AIM_Z = aim.map(function (p) { return literal(p[1]); }).join(', ');
     return v;
   }
 

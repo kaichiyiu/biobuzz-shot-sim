@@ -45,6 +45,7 @@ test('render: no {{ left; every scalar literal round-trips exactly; hood arrays 
   for (const [name, key] of Object.entries(SCALARS)) { assert.equal(Number(field(a, name)), ADJ.c[key], name); assert.equal(Number(field(f, name)), FIX.c[key], name); }
   assert.equal(field(a, 'HOOD_FIXED'), 'false'); assert.equal(field(a, 'HOOD_ANGLE_DEG'), 'Double.NaN');
   assert.deepEqual(list(a, 'HOOD_D_IN'), ADJ.c.hood.table.map((p) => p[0])); assert.deepEqual(list(a, 'HOOD_DEG'), ADJ.c.hood.table.map((p) => p[1]));
+  for (const [o, k] of [[a, ADJ], [f, FIX]]) { assert.deepEqual(list(o, 'AIM_D_IN'), k.c.aim.map((p) => p[0])); assert.deepEqual(list(o, 'AIM_Z'), k.c.aim.map((p) => p[1])); assert.ok(k.c.aim.length >= 7); }
   assert.equal(field(f, 'HOOD_FIXED'), 'true'); assert.equal(Number(field(f, 'HOOD_ANGLE_DEG')), 62.5);
   assert.deepEqual(list(f, 'HOOD_D_IN'), []); assert.deepEqual(list(f, 'HOOD_DEG'), []);
 });

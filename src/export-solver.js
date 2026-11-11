@@ -1,7 +1,9 @@
 /* BIOBUZZ Shot Sim - #4 on-robot flight solver, JS reference (same equations as src/templates/ShotSolver.java.txt). Browser: window.ExportSolver. Node: module.exports.
    Integrates EXACTLY the engine's flight model (engine.js aeroK + flyFloat): quadratic drag + lift perpendicular to the velocity, spin ratio Sr = S0 v0 / |v| clamped to
    +-clSMax, g, RK4 at the engine step dt. Frame: x horizontal from the mouth, z above the mouth, SI units. Maths: process_docs/issue-4/design.md sections 8-10.
-   constantsFrom(params, rows, E, xs?) -> SolverConstants   rows = ExportRow[], E = ShotEngine. No usable row -> NaN fields (solveSpeed then gives ok:false).
+   constantsFrom(params, rows, E) -> SolverConstants   rows = ExportRow[], E = ShotEngine. No usable row -> NaN fields (solveSpeed then gives ok:false).
+   aim: [[dRobotIn, aimZM]] per reachable row = height of THIS integrator's path (row.launchDeg, v = row.exitSpeedMps.c) at rho = row.dMouthIn; aimZM = median (fallback only).
+   aimFor(c, dRobotIn) -> m   linear in the aim table, flat beyond the ends (c.aimZM when the table is empty).
    angleFor(c, dRobotIn) -> deg       fixed hood: constant; adjustable (or no hood): linear interpolation in c.hood.table [[dRobotIn, deg]], flat beyond the ends.
    solveSpeed(c, dRobotIn) -> {vMps, motorRpm, ticksPerSec, iterations, ok, thetaDeg}   bisection on v so that z(rho = dMouth) = aimZ. NaN numbers when !ok.
    heightAt(c, thetaDeg, v0, rho) -> z at x = rho (-Infinity if never reached)   trajectory(c, thetaDeg, v0, tEnd) -> [[x, z, vx, vz], ...] like E._internal.flyFloat. */
@@ -11,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   var IN_M = 0.0254, DEG = Math.PI / 180;
-  var LIM = { T_MAX: 2.6, V_LO: 2, V_HI: 16, V_STEP: 1, V_TOL: 1e-6, MAX_IT: 40 };   // flight time cap = engine tMax; speed range = engine table range; scan step; bisection stop; flight cap
+  var LIM = { T_MAX: 2.6, V_LO: 2, V_HI: 16, V_STEP: 0.25, V_TOL: 1e-6, MAX_IT: 80 };   // flight time cap = engine tMax; speed range = engine table range; scan step; bisection stop; flight cap (worst case 1 + 56 scan + 18 bisection = 75)
 
   function fin(x) { return typeof x === 'number' && isFinite(x); }
   function median(a) {
@@ -66,23 +68,28 @@
     return -Infinity;
   }
 
-  function angleFor(c, dRobotIn) {
-    var h = c.hood;
-    if (!fin(dRobotIn)) return NaN;
-    if (h.mode === 'fixed') return h.angleDeg;
-    var t = h.table, n = t.length, i;
-    if (!n) return NaN;
-    if (dRobotIn <= t[0][0]) return t[0][1];
-    if (dRobotIn >= t[n - 1][0]) return t[n - 1][1];
-    for (i = 0; i < n - 1 && !(dRobotIn < t[i + 1][0]); i++);
-    return t[i][1] + (dRobotIn - t[i][0]) * (t[i + 1][1] - t[i][1]) / (t[i + 1][0] - t[i][0]);
+  // linear interpolation in a table [[d, y], ...] sorted by d, flat beyond the ends; NaN for an empty table or non-finite d
+  function interp(t, d) {
+    var n = t.length, i;
+    if (!n || !fin(d)) return NaN;
+    if (d <= t[0][0]) return t[0][1];
+    if (d >= t[n - 1][0]) return t[n - 1][1];
+    for (i = 0; i < n - 1 && !(d < t[i + 1][0]); i++);
+    return t[i][1] + (d - t[i][0]) * (t[i + 1][1] - t[i][1]) / (t[i + 1][0] - t[i][0]);
   }
 
+  function angleFor(c, dRobotIn) {
+    if (!fin(dRobotIn)) return NaN;
+    return c.hood.mode === 'fixed' ? c.hood.angleDeg : interp(c.hood.table, dRobotIn);
+  }
+
+  function aimFor(c, dRobotIn) { return c.aim && c.aim.length ? interp(c.aim, dRobotIn) : c.aimZM; }
+
   function solveSpeed(c, dRobotIn) {
-    var th = angleFor(c, dRobotIn), rho = (dRobotIn - c.mouthForwardIn) * IN_M;
+    var th = angleFor(c, dRobotIn), rho = (dRobotIn - c.mouthForwardIn) * IN_M, aim = aimFor(c, dRobotIn);
     var res = { vMps: NaN, motorRpm: NaN, ticksPerSec: NaN, iterations: 0, ok: false, thetaDeg: th };
-    if (!(fin(th) && fin(rho) && rho > 0 && fin(c.aimZM) && fin(c.rpmPerMps) && fin(c.ticksPerMotorRev) && fin(c.h0M))) return res;
-    function f(v) { return heightAt(c, th, v, rho) - c.aimZM; }
+    if (!(fin(th) && fin(rho) && rho > 0 && fin(aim) && fin(c.rpmPerMps) && fin(c.ticksPerMotorRev) && fin(c.h0M))) return res;
+    function f(v) { return heightAt(c, th, v, rho) - aim; }
     var lo = LIM.V_LO, hi = lo, it = 1, mid;
     if (!(f(lo) < 0)) return res;
     // scan up in V_STEP m/s until the path first reaches the aim height: [lo, hi] then lies on the rising branch (z(rho) is not monotone for backspin at theta >= ~81 deg and v >~ 10 m/s)
@@ -103,20 +110,25 @@
     var I = E._internal, np = I.normParams(params), bp = E.ballProps(np.ballId), A = E.constants().aero;
     var use = (rows || []).filter(function (r) { return r && r.reachable && r.motorRpm && r.exitSpeedMps && r.exitSpeedMps.c > 0; });
     var h0In = np.mouth.height, hd = params && params.hood;
-    var aim = use.filter(function (r) { return fin(r.aimZIn); }).map(function (r) { return (r.aimZIn - h0In) * IN_M; });
     var table = use.filter(function (r) { return fin(r.launchDeg); }).map(function (r) { return [r.dRobotIn, r.launchDeg]; })
       .sort(function (p, q) { return p[0] - q[0]; });
     var hood = hd && hd.mode === 'fixed'
       ? { mode: 'fixed', angleDeg: fin(hd.angleDeg) ? hd.angleDeg : median(table.map(function (p) { return p[1]; })) }
       : { mode: 'adjustable', table: table };
-    return {
+    var c = {
       massKg: bp.massKg, areaM2: bp.areaM2, rho: A.rho, cd: A.cd, clSlope: A.clSlope, clSMax: A.clSMax, g: A.g,
-      S0: E.shooterSpin(params && params.shooter), dt: I.tableSpec.dt, h0M: h0In * IN_M, aimZM: median(aim), hood: hood,
+      S0: E.shooterSpin(params && params.shooter), dt: I.tableSpec.dt, h0M: h0In * IN_M, aimZM: NaN, aim: [], hood: hood,
       rpmPerMps: median(use.map(function (r) { return r.motorRpm.c / r.exitSpeedMps.c; })),
       ticksPerMotorRev: median(use.filter(function (r) { return r.ticksPerSec && r.motorRpm.c > 0; }).map(function (r) { return r.ticksPerSec.c / r.motorRpm.c * 60; })),
       mouthForwardIn: use.length ? median(use.map(function (r) { return r.dRobotIn - r.dMouthIn; })) : 0
     };
+    // per-distance aim: height of the centre-speed path at the mouth distance, with this module's own integrator (so solveSpeed inverts it exactly at the nodes)
+    c.aim = use.filter(function (r) { return fin(r.launchDeg) && fin(r.dMouthIn); }).map(function (r) {
+      return [r.dRobotIn, heightAt(c, r.launchDeg, r.exitSpeedMps.c, r.dMouthIn * IN_M)];
+    }).filter(function (p) { return fin(p[1]); }).sort(function (p, q) { return p[0] - q[0]; });
+    c.aimZM = median(c.aim.map(function (p) { return p[1]; }));
+    return c;
   }
 
-  return { constantsFrom: constantsFrom, angleFor: angleFor, solveSpeed: solveSpeed, heightAt: heightAt, trajectory: trajectory, LIMITS: LIM };
+  return { constantsFrom: constantsFrom, angleFor: angleFor, aimFor: aimFor, solveSpeed: solveSpeed, heightAt: heightAt, trajectory: trajectory, LIMITS: LIM };
 });
