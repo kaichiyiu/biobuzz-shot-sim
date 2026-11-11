@@ -94,6 +94,7 @@
     tableRows = table.rows;
     range = rangeOf(tableRows);
     panel.table(rowCells(tableRows, ctx.units, ctx.state.units), null, done && tableRows.length > 0);
+    if (UI.exportAlgo) UI.exportAlgo.setTable({ rows: tableRows, params: lastP, cfg: cfg(), etaCurve: etaCurveOf(c), ready: !!done && tableRows.length > 0 });   // G4 hook-in: the algorithm section is built from the finished table
   }
   function start() {
     if (run) return;
