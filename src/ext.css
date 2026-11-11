@@ -29,3 +29,15 @@
 .calib-sum { font-size: 13px; margin: 0; }
 .calib-badge { display: block; font-weight: 600; color: var(--ink); }
 .calib-badge:empty { display: none; }
+/* tolerance (ui-tolerance*, #7) */
+.tol { display: grid; gap: 6px; margin-bottom: 8px; }
+.tol-fields { display: flex; flex-wrap: wrap; gap: 8px; }
+.tol-f { display: grid; gap: 2px; font-size: 12px; }
+.tol-f .row { display: flex; align-items: center; gap: 4px; }
+.tol-f input { width: 72px; }
+.tol-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.tol-btns .btn { min-height: 28px; padding: 3px 9px; font-size: 13px; }
+.tol-res p { margin: 2px 0; font-size: 13px; }
+.tol-margin { font-weight: 600; }
+.tol-best { color: var(--ink-2); }
+.tol-msg:empty, .tol-res:empty { display: none; }
