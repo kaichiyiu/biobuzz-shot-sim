@@ -57,6 +57,18 @@
   }
   function set(m, recalc) { cur = norm(m); refresh(); if (recalc && ctx) ctx.recalc(); }
   function say(t) { if (panel) panel.say(t); }
+  // the reason line under the badge drops its hit-rate wording while a margin is shown. Only the legacy sentences are replaced (never a hood error text).
+  function fixReason() {
+    var el = document.getElementById('reason'), txt = last && last.tolerance && UI.tolPanel ? UI.tolPanel.reason(last.tolerance, last) : null;
+    if (el && txt && /^(Scores|Only) \d+% of shots/.test(el.textContent || '')) el.textContent = txt;
+  }
+  // the app re-renders results on a units switch without calling hooks: watch the reason line and the units buttons (same precedent as ui-entry)
+  function watch() {
+    if (typeof MutationObserver !== 'function') return;
+    var rs = document.getElementById('reason'), us = document.querySelector('[data-key="units"]');
+    if (rs) new MutationObserver(fixReason).observe(rs, { childList: true, characterData: true, subtree: true });
+    if (us) new MutationObserver(function () { if (panel) { panel.sync(); panel.result(last); } }).observe(us, { attributes: true, attributeFilter: ['aria-pressed'], subtree: true });
+  }
 
   UI.tolerance = api;
   UI.hooks = (UI.hooks || []).concat([{
@@ -93,15 +105,15 @@
           onClear: function () { say(''); set(null, true); }
         });
       }
-      refresh();
+      watch(); refresh();
     },
     extendParams: function (p) {
       var t = toParams(cur);
       if (p && t) p.tolerance = t;
       return p;
     },
-    onChange: function () { if (panel) { panel.sync(); panel.result(last); } },   // units switch: values and result text in the new units
-    onResult: function (r) { last = r; if (panel) panel.result(r); },
+    onChange: function () { if (panel) { panel.sync(); panel.result(last); } },   // units switch: values and result text in the new units (the legacy render redoes #reason)
+    onResult: function (r) { last = r; if (panel) panel.result(r); fixReason(); },   // runs after the legacy render
     configSlice: {
       key: 'tolerance',
       get: function () { return isActive(cur) ? norm(cur) : null; },

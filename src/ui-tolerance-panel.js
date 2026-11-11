@@ -63,6 +63,15 @@
     return out;
   }
 
+  // the line under the badge when a margin is shown (the legacy reason talks about the hit rate): "Margin 0.7× · limited by launch angle, low side · 62 % motor headroom"
+  function reason(t, r) {
+    if (!t || t.margin == null) return null;
+    var h = r && r.motor && r.motor.headroom, bits = ['Margin ' + (t.capped ? '≥ ' + t.sMax : (t.lowerBound ? '≥ ' : '') + fmtMargin(t.margin)) + '×'];
+    if (!t.capped && t.limitingAxis) bits.push('limited by ' + AXIS[t.limitingAxis] + ', ' + side(t.limitingAxis, t.limitingSide));
+    if (typeof h === 'number' && isFinite(h)) bits.push(t.cappedBy === 'headroom' ? 'the motor runs at ' + Math.round(h * 100) + ' % of free speed — no headroom as the battery drains' : Math.round((1 - h) * 100) + ' % motor headroom');
+    return bits.join(' · ');
+  }
+
   function el(tag, attrs, kids) {
     var e = document.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') e.textContent = attrs[k]; else e.setAttribute(k, attrs[k]); });
@@ -118,7 +127,7 @@
     };
   }
 
-  var api = { describe: describe, fmtMargin: fmtMargin, mount: mount, FIELDS: FIELDS, PRESETS: PRESETS, CAL_HINT: CAL_HINT };
+  var api = { describe: describe, reason: reason, fmtMargin: fmtMargin, mount: mount, FIELDS: FIELDS, PRESETS: PRESETS, CAL_HINT: CAL_HINT };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
   root.ShotUI = root.ShotUI || {};
   root.ShotUI.tolPanel = api;

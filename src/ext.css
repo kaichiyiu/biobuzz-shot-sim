@@ -31,7 +31,7 @@
 .calib-badge:empty { display: none; }
 /* tolerance (ui-tolerance*, #7) */
 .tol { display: grid; gap: 6px; margin-bottom: 8px; }
-.tol-fields { display: flex; flex-wrap: wrap; gap: 8px; }
+.tol-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 .tol-f { display: grid; gap: 2px; font-size: 12px; }
 .tol-f .row { display: flex; align-items: center; gap: 4px; }
 .tol-f input { width: 72px; }
@@ -41,3 +41,6 @@
 .tol-margin { font-weight: 600; }
 .tol-best { color: var(--ink-2); }
 .tol-msg:empty, .tol-res:empty { display: none; }
+/* I8: with a tolerance the margin verdict replaces the hit-rate model on the main screen (Show the math still lists the hit rate) */
+body.has-tolerance .ctl:has(> #precHelp) { display: none; }
+body.has-tolerance .motors table :is(th, td):nth-child(7) { display: none; }   /* motors table: Hit rate (7th of 8 columns) */

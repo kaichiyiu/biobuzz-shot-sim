@@ -20,8 +20,7 @@ test('norm: junk / negative / NaN -> 0, source passes only preset; isActive need
   assert.deepEqual(T.norm({ yawDeg: -1, angleDeg: 'x', rpm: NaN, posIn: Infinity, source: 'zzz' }), T.norm(null));
   assert.equal(T.norm({ source: 'preset' }).source, 'preset');
   assert.equal(T.isActive(T.norm(null)), false); assert.equal(T.isActive({ rpm: 1 }), true);
-  assert.equal(T.toParams(T.norm(null)), null);
-  assert.deepEqual(T.toParams({ yawDeg: 1, rpm: 30 }), { yawDeg: 1, angleDeg: 0, rpm: 30, posIn: 0, source: 'measured', best: true });
+  assert.equal(T.toParams(T.norm(null)), null); assert.deepEqual(T.toParams({ yawDeg: 1, rpm: 30 }), { yawDeg: 1, angleDeg: 0, rpm: 30, posIn: 0, source: 'measured', best: true });
 });
 
 test('presets: 2 sigma of data.shooter.precision (angle, yaw), 2 sigShooter x motor rpm, position 1 in, source preset; unknown rpm keeps the old value', () => {
@@ -89,14 +88,14 @@ const byId = (root, id) => flat(root).find((x) => x.attrs.id === id);
 function browser(extraUI) {
   const host = fakeEl('div'), motorsHead = fakeEl('div'), cap = fakeEl('p'), body = fakeEl('body');
   motorsHead.appendChild(cap);
-  const els = { toleranceHost: host, motorsCaption: cap };
+  const els = { toleranceHost: host, motorsCaption: cap, reason: fakeEl('p') };
   const win = { ShotUI: { ...(extraUI || {}) } }, ctx = { recalcs: 0 };
   const sb = { window: win, document: { createElement: fakeEl, getElementById: (id) => els[id] || null, body } };
   for (const f of ['ui-tolerance-panel.js', 'ui-tolerance.js']) vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src', f), 'utf8'), sb);
   const hook = win.ShotUI.hooks.find((h) => h.name === 'tolerance');
   hook.onStart({ units: U, data: D, engine: E, recalc() { ctx.recalcs++; }, state: {} });
   const wrap = host.kids[0];
-  return { win, hook, host, cap, body, ctx, wrap, input: (id) => byId(wrap, id), btn: (sel) => flat(wrap).find((x) => x.attrs['data-preset'] === sel || x.attrs.id === sel),
+  return { win, hook, host, cap, body, reason: els.reason, ctx, wrap, input: (id) => byId(wrap, id), btn: (sel) => flat(wrap).find((x) => x.attrs['data-preset'] === sel || x.attrs.id === sel),
     type(id, text) { const i = byId(wrap, id); i.value = text; i.listeners.change(); } };
 }
 
@@ -178,4 +177,24 @@ test('onResult renders the margin block (preview tag on coarse); a result withou
   b.hook.onResult(E.evaluate({ ...BASE, hood: HOOD, tolerance: { ...TOL } }, 'coarse'), {}, 'coarse');
   assert.match(txt()[0], /\(preview\)$/);
   b.hook.onResult(run(null), {}, 'full'); assert.equal(res.kids.length, 0);
+});
+
+test('I8 markup / css contract: the precision row is the .ctl holding #precHelp, the 7th motors column is Hit rate, both hidden under body.has-tolerance', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'ext.css'), 'utf8'), html = fs.readFileSync(path.join(ROOT, 'src', 'markup.html'), 'utf8');
+  assert.match(css, /body\.has-tolerance \.ctl:has\(> #precHelp\) \{ display: none; \}/);
+  assert.match(css, /body\.has-tolerance \.motors table :is\(th, td\):nth-child\(7\) \{ display: none; \}/);
+  assert.match(html, /<div class="ctl"><span class="label" id="prec-l">[\s\S]*?<span class="help" id="precHelp"><\/span>\s*<\/div>/);
+  const ths = [...html.match(/<thead><tr>([\s\S]*?)<\/tr><\/thead>/g).find((t) => /Hit rate/.test(t)).matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
+  assert.equal(ths[6], 'Hit rate'); assert.equal(ths.length, 8);
+});
+
+test('reason line: while a margin is shown the hit-rate wording is replaced (margin, limiter, headroom); no margin / no tolerance leave it alone', () => {
+  const r = run(TOL), t = r.tolerance, h = Math.round((1 - r.motor.headroom) * 100);
+  assert.equal(PN.reason(t, r), `Margin ${PN.fmtMargin(t.margin)}× · limited by launch angle, low side · ${h} % motor headroom`);
+  assert.equal(PN.reason({ ...t, capped: true, sMax: 4, limitingAxis: null }, r), `Margin ≥ 4× · ${h} % motor headroom`);
+  assert.match(PN.reason({ ...t, cappedBy: 'headroom' }, { motor: { headroom: 0.95 } }), /the motor runs at 95 % of free speed — no headroom/);
+  assert.equal(PN.reason({ ...t, margin: null }, r), null); assert.equal(PN.reason(null, r), null);
+  const b = browser(); b.reason.textContent = "Scores 87% of shots with 62% motor headroom"; b.hook.onResult(run(null), {}, "full"); assert.match(b.reason.textContent, /^Scores 87%/);
+  b.hook.onResult(r, {}, 'full'); assert.doesNotMatch(b.reason.textContent, /shots/); assert.match(b.reason.textContent, /^Margin \d\.\d× · limited by/);
+  b.reason.textContent = 'The hood angle is not valid'; b.hook.onResult(r, {}, 'full'); assert.equal(b.reason.textContent, 'The hood angle is not valid');   // error texts stay
 });
