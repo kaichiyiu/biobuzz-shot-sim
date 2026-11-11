@@ -48,7 +48,7 @@ test('soundness: a row whose highest rpm exceeds the usable free speed is "over 
   assert.ok(t.header.notes.some((n) => /Over motor limit: 1 row/.test(n)));
   assert.equal(X.buildTable(null, null, [ok], free, F).header.notes.some((n) => /Over motor limit/.test(n)), false);
   const java = F.toJavaArrays({ header: t.header, rows: [{ ...ok, dRobotIn: 20 }, { ...bad, ...t.rows[1], dRobotIn: 30 }] }, 'T');
-  assert.match(java, /DIST_IN = \{\s*20\s*\}/); assert.doesNotMatch(java, /30/);
+  assert.match(java, /DIST_IN = \{\s*20\s*\}/); assert.doesNotMatch(java.match(/DIST_IN = \{[^}]*\}/)[0], /30/);   // the DIST_IN array only: the header carries an ISO timestamp (e.g. '.730Z')
   const cells = X.rowCells(t.rows, U, 'imperial');
   assert.equal(cells[1].note, 'over motor limit'); assert.equal(cells[1].bad, true); assert.equal(cells[0].note, '');
 });
