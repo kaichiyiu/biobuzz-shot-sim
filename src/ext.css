@@ -29,3 +29,27 @@
 .calib-sum { font-size: 13px; margin: 0; }
 .calib-badge { display: block; font-weight: 600; color: var(--ink); }
 .calib-badge:empty { display: none; }
+/* tolerance (ui-tolerance*, #7) */
+.tol { display: grid; gap: 6px; margin-bottom: 8px; }
+.tol-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.tol-f { display: grid; gap: 2px; font-size: 12px; }
+.tol-f .row { display: flex; align-items: center; gap: 4px; }
+.tol-f input { width: 72px; }
+.tol-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.tol-btns .btn { min-height: 28px; padding: 3px 9px; font-size: 13px; }
+.tol-res p { margin: 2px 0; font-size: 13px; }
+.tol-margin { font-weight: 600; }
+.tol-best { color: var(--ink-2); }
+.tol-msg:empty, .tol-res:empty { display: none; }
+/* no verdicts (owner decision 2026-11-11): neutral margin badge; the motors table never shows Hit rate (7th) or Verdict (8th) */
+.verdict-badge.v-neutral { color: var(--ink); background: var(--panel-2, color-mix(in srgb, var(--ink) 8%, transparent)); }
+.ctl:has(> #precHelp) { display: none; }   /* Robot precision only fed the hit-rate model, which is no longer shown */
+.motors table :is(th, td):nth-child(n+7) { display: none; }
+#motorReadout > div:nth-child(5):not(.wide) { display: none; }   /* 'Speed scatter' row (5th of 6): it fed the removed hit-rate model, its precision input is hidden */
+/* field margin map (ui-margin-map): toolbar controls, tooltip, legend swatch; the legacy coarse Verdict map is hidden once the module has loaded (no verdicts) */
+.mm-bar { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mm-colour { font: 500 13px/1.2 var(--cond); color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+.mm-colour select { font: inherit; }
+.mm-tip { position: absolute; z-index: 5; pointer-events: none; max-width: 190px; padding: 6px 8px; border-radius: 4px; font: 500 12px/1.35 var(--cond); background: var(--ink); color: var(--robot); box-shadow: var(--shadow); }
+.mm-hatch { background: repeating-linear-gradient(45deg, var(--ink-3) 0 1px, transparent 1px 4px); }
+body.has-margin-map :is(#scanBtn, #scanProgress, #heatLegend) { display: none; }

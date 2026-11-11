@@ -48,7 +48,7 @@ test('soundness: a row whose highest rpm exceeds the usable free speed is "over 
   assert.ok(t.header.notes.some((n) => /Over motor limit: 1 row/.test(n)));
   assert.equal(X.buildTable(null, null, [ok], free, F).header.notes.some((n) => /Over motor limit/.test(n)), false);
   const java = F.toJavaArrays({ header: t.header, rows: [{ ...ok, dRobotIn: 20 }, { ...bad, ...t.rows[1], dRobotIn: 30 }] }, 'T');
-  assert.match(java, /DIST_IN = \{\s*20\s*\}/); assert.doesNotMatch(java, /30/);
+  assert.match(java, /DIST_IN = \{\s*20\s*\}/); assert.doesNotMatch(java.match(/DIST_IN = \{[^}]*\}/)[0], /30/);   // the DIST_IN array only: the header carries an ISO timestamp (e.g. '.730Z')
   const cells = X.rowCells(t.rows, U, 'imperial');
   assert.equal(cells[1].note, 'over motor limit'); assert.equal(cells[1].bad, true); assert.equal(cells[0].note, '');
 });
@@ -63,11 +63,11 @@ test('exportRange: reachable rows only (limited copy), null when none; calibrati
   assert.equal(X.etaCurveOf({ calibrated: true, mode: 'single', fit: { curve } }), undefined); assert.equal(X.etaCurveOf(null), undefined);
 });
 
-test('rowCells: distance in display units, unreachable rows show their verdict', () => {
+test('rowCells: distance in display units, unreachable rows never print a verdict', () => {
   const r = rowAt(3), c = X.rowCells([r], U, 'metric')[0];
   assert.equal(c.dist, U.nf(U.toLen(r.dRobotIn, 'metric'), 1)); assert.match(c.rpm, /^[\d,]+ \[[\d,]+-[\d,]+\]$/); assert.match(c.angle, /°$/);
   const u = X.rowCells([{ dRobotIn: 40, dMouthIn: 40, reachable: false, verdict: "WON'T WORK" }], U, 'imperial')[0];
-  assert.equal(u.note, "won't work"); assert.equal(u.rpm, '-');
+  assert.equal(u.note, 'not reachable'); assert.equal(u.rpm, '-');
 });
 
 test('CSV through buildTable carries the uncalibrated note and the column row', () => {
@@ -120,6 +120,16 @@ test('F3: no change -> not labelled; a change that is reverted before the end is
   const r3 = rig(); r3.hook.onResult({}, P, 'full'); r3.deps.run(); r3.hook.onResult({}, { ...P, h0: 20 }, 'full');
   const rows = [rowAt(3)]; rows.cancelled = true; r3.log.runs[0].finish(rows); await r3.log.runs[0].promise; await new Promise((r) => setImmediate(r));
   assert.match(r3.log.say[r3.log.say.length - 1], /Cancelled after 1 rows.*settings at the start of the run/); assert.equal(r3.log.algo[0].ready, false);
+});
+
+test('export run: a tolerance is passed with best:false (copy), the captured params stay untouched; no tolerance -> same object', () => {
+  const tol = { yawDeg: 1, angleDeg: 1, rpm: 50, posIn: 2, source: 'measured', best: true }, PT = { ...P, tolerance: tol };
+  const r = rig(); r.hook.onResult({}, PT, 'full'); r.deps.run();
+  const sent = r.log.runs[0].p;
+  assert.equal(sent.tolerance.best, false); assert.deepEqual({ ...sent.tolerance, best: true }, tol);
+  assert.equal(tol.best, true); assert.equal(PT.tolerance, tol); assert.notEqual(sent, PT);
+  const r2 = rig(); r2.hook.onResult({}, P, 'full'); r2.deps.run();
+  assert.equal(r2.log.runs[0].p, P);
 });
 
 test('F3 pure: isStale compares params and calibration by value; the note text is exported', () => {

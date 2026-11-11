@@ -1,4 +1,4 @@
-/* BIOBUZZ Shot Sim - #18 results panel: verdict badge + reason + chips (Required-arc title bar), Required-arc rows,
+/* BIOBUZZ Shot Sim - #18 results panel: margin badge + reason + chips (Required-arc title bar), Required-arc rows,
    Scoring window block, Reference-data rows. Browser: window.ShotUI.results. */
 (function (root) {
   'use strict';
@@ -31,18 +31,41 @@
     return c;
   }
 
-  // badge: icon + LABEL · NN% (never colour alone); no label when the verdict is null (error result)
+  // tolerance model: neutral badge "1.6× margin" ("≥ " when it is only a bound); margin null (cannot be shot) -> "out of reach". No verdict word (owner decision 2026-11-11).
+  function marginBadge(t) {
+    if (t.margin == null) return 'out of reach';
+    var m = t.margin, n = t.capped ? String(t.sMax) : (m < 1 - 1e-6 && m.toFixed(1) === '1.0' ? m.toFixed(2) : m.toFixed(1));
+    return (t.capped || t.lowerBound ? '≥ ' : '') + n + '× margin';
+  }
+
+  // engine reasons with a hit rate in them (codes OK / LOW_HEADROOM / MISSES_OFTEN / RARELY_SCORES) -> neutral facts:
+  // "Scoring window: 62°–71°, 2,100–2,300 rpm, yaw 10°–14° · 62 % of free speed used". NO_ARC / TOO_SLOW / hood-error reasons are physical facts and stay.
+  var HIT_CODES = { OK: 1, LOW_HEADROOM: 1, MISSES_OFTEN: 1, RARELY_SCORES: 1 };
+  function span(a, d) { return nf(a[0], d) + '°–' + nf(a[1], d) + '°'; }
+  function factReason(r) {
+    var b = r && r.best, w = b && (b.scoringWindow || b.windows);
+    if (!b || !w || !HIT_CODES[r.code] || !w.thetaDeg || !w.yawDeg) return null;
+    var bits = ['launch angle ' + span(w.thetaDeg, 1)], m = b.scoringWindow && b.scoringWindow.motorRpm, q = null;
+    if (m) bits.push(nf(m[0], 0) + '–' + nf(m[1], 0) + ' rpm');
+    try { q = D.U.headingRangeToUser(w.yawDeg[0], w.yawDeg[1]); } catch (e) { q = null; }
+    bits.push('yaw ' + (q ? (q.wraps ? nf(q.from, 1) + '° → ' + nf(q.to, 1) + '°' : nf(q.from, 1) + '°–' + nf(q.to, 1) + '°') : span(w.yawDeg, 1)));
+    var h = r.motor && r.motor.headroom, txt = 'Scoring window: ' + bits.join(', ');
+    if (typeof h === 'number' && isFinite(h)) txt += ' · ' + Math.round(h * 100) + ' % of free speed used';
+    return txt;
+  }
+
+  // badge: neutral margin text (never a verdict, never colour alone); hidden without a tolerance and for error results (verdict null)
   function renderBadge(r) {
     var badge = D.$('verdictBadge'), box = D.$('warnings');
-    if (r.verdict == null) badge.hidden = true;
+    var tol = r.tolerance && r.tolerance.margin !== undefined ? r.tolerance : null;
+    if (r.verdict == null || !tol) badge.hidden = true;
     else {
-      var cls = D.VCLASS[r.verdict] || 'bad';
       badge.hidden = false;
-      badge.className = 'verdict-badge v-' + cls;
-      badge.innerHTML = D.ICON[cls];
-      badge.appendChild(document.createTextNode(r.verdict + ' · ' + Math.floor(r.hitRate * 100 + 1e-9) + '%'));
+      badge.className = 'verdict-badge v-neutral';
+      badge.innerHTML = '';
+      badge.appendChild(document.createTextNode(marginBadge(tol)));
     }
-    D.$('reason').textContent = D.L10n(r.reason);
+    D.$('reason').textContent = factReason(r) || D.L10n(r.reason);
     box.replaceChildren();
     (r.warnings || []).forEach(function (w) { box.appendChild(chip(D.L10n(w.text))); });
     var h = r.hood;

@@ -238,16 +238,11 @@
         <summary>How this works &amp; assumptions</summary>
         <div class="about-body">
           <div>
-            <h3>The three verdicts</h3>
-            <ul>
-              <li><b>POSSIBLE</b>: at least 80% of shots score and the motor runs under 92% of its free speed.</li>
-              <li><b>NOT CONSISTENT</b>: 40–80% score, or the motor is near its limit.</li>
-              <li><b>WON'T WORK</b>: no clean arc, the motor can't reach the speed, or under 40% score.</li>
-            </ul>
+            <h3>No verdict, on purpose</h3>
+            <p>The tool does not tell you whether a shot is "good enough". It shows the <b>scoring window</b>: the ranges of yaw, launch angle and motor speed that still score from this spot. Compare those ranges with how accurately your robot really aims, tilts and spins up.</p>
+            <p>If you enter your robot's ± errors (Tolerance), it also reports a <b>margin</b>: how many times your ± limits fit inside the scoring window. 1.0× means they just fit, 2× means you could be twice as far off. The margin names the limiting axis, the one that runs out first.</p>
             <h3>Ball flight</h3>
             <p>Each arc is integrated with air drag (C<sub>D</sub> 0.45) and backspin lift (C<sub>L</sub> = 0.2 · min(spin ratio, 1)) measured on 26-hole pickleball-style balls like Pollen and Nectar. The ball has to pass cleanly through the CELL mouth; touching any edge, the frame, another CELL or a wall counts as a miss.</p>
-            <h3>Hit rate</h3>
-            <p>Your robot never shoots perfectly. Each shot is off by random amounts in launch angle, aim and exit speed (the precision setting). Speed scatter also grows when the motor has little headroom or the flywheel hasn't recovered from the last shot. The hit rate is the share of those shots that still score.</p>
           </div>
           <div>
             <h3>Field</h3>
@@ -270,7 +265,7 @@
 <dialog class="math-dialog" id="mathDialog" aria-labelledby="math-h">
   <div class="math-head">
     <div>
-      <h2 id="math-h">The math behind this verdict</h2>
+      <h2 id="math-h">The math behind this result</h2>
       <p class="help" id="mathSub"></p>
     </div>
     <button type="button" class="btn" id="mathClose" aria-label="Close the math panel">Close</button>
