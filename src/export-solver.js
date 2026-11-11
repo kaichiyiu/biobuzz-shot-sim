@@ -1,0 +1,121 @@
+/* BIOBUZZ Shot Sim - #4 on-robot flight solver, JS reference (same equations as src/templates/ShotSolver.java.txt). Browser: window.ExportSolver. Node: module.exports.
+   Integrates EXACTLY the engine's flight model (engine.js aeroK + flyFloat): quadratic drag + lift perpendicular to the velocity, spin ratio Sr = S0 v0 / |v| clamped to
+   +-clSMax, g, RK4 at the engine step dt. Frame: x horizontal from the mouth, z above the mouth, SI units. Maths: process_docs/issue-4/design.md sections 8-10.
+   constantsFrom(params, rows, E, xs?) -> SolverConstants   rows = ExportRow[], E = ShotEngine. No usable row -> NaN fields (solveSpeed then gives ok:false).
+   angleFor(c, dRobotIn) -> deg       fixed hood: constant; adjustable (or no hood): linear interpolation in c.hood.table [[dRobotIn, deg]], flat beyond the ends.
+   solveSpeed(c, dRobotIn) -> {vMps, motorRpm, ticksPerSec, iterations, ok, thetaDeg}   bisection on v so that z(rho = dMouth) = aimZ. NaN numbers when !ok.
+   heightAt(c, thetaDeg, v0, rho) -> z at x = rho (-Infinity if never reached)   trajectory(c, thetaDeg, v0, tEnd) -> [[x, z, vx, vz], ...] like E._internal.flyFloat. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ExportSolver = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+  var IN_M = 0.0254, DEG = Math.PI / 180;
+  var LIM = { T_MAX: 2.6, V_LO: 2, V_HI: 16, V_STEP: 1, V_TOL: 1e-6, MAX_IT: 40 };   // flight time cap = engine tMax; speed range = engine table range; scan step; bisection stop; flight cap
+
+  function fin(x) { return typeof x === 'number' && isFinite(x); }
+  function median(a) {
+    var s = a.slice().sort(function (x, y) { return x - y; }), n = s.length;
+    return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN;
+  }
+
+  function kOf(c, v0) {
+    return {
+      kd: 0.5 * c.rho * c.cd * c.areaM2 / c.massKg, kl0: 0.5 * c.rho * c.areaM2 / c.massKg * c.clSlope,
+      smax: c.clSMax, g: c.g, wr: c.S0 * v0, dt: c.dt
+    };
+  }
+
+  function accel(K, ux, uz, out) {
+    var V = Math.sqrt(ux * ux + uz * uz), Sr = V > 1e-9 ? K.wr / V : 0;
+    if (Sr > K.smax) Sr = K.smax; else if (Sr < -K.smax) Sr = -K.smax;
+    var kl = K.kl0 * Sr;
+    out[0] = -K.kd * V * ux - kl * V * uz;
+    out[1] = -K.g - K.kd * V * uz + kl * V * ux;
+  }
+
+  // one RK4 step of s = [x, z, vx, vz] (same stages and sums as flyFloat)
+  function step(K, s, a) {
+    var dt = K.dt, vx = s[2], vz = s[3];
+    accel(K, vx, vz, a); var a1x = a[0], a1z = a[1];
+    var b2x = vx + dt / 2 * a1x, b2z = vz + dt / 2 * a1z; accel(K, b2x, b2z, a); var a2x = a[0], a2z = a[1];
+    var b3x = vx + dt / 2 * a2x, b3z = vz + dt / 2 * a2z; accel(K, b3x, b3z, a); var a3x = a[0], a3z = a[1];
+    var b4x = vx + dt * a3x, b4z = vz + dt * a3z; accel(K, b4x, b4z, a); var a4x = a[0], a4z = a[1];
+    s[0] += dt / 6 * (vx + 2 * b2x + 2 * b3x + b4x);
+    s[1] += dt / 6 * (vz + 2 * b2z + 2 * b3z + b4z);
+    s[2] += dt / 6 * (a1x + 2 * a2x + 2 * a3x + a4x);
+    s[3] += dt / 6 * (a1z + 2 * a2z + 2 * a3z + a4z);
+  }
+
+  function trajectory(c, thetaDeg, v0, tEnd) {
+    var K = kOf(c, v0), th = thetaDeg * DEG, s = [0, 0, v0 * Math.cos(th), v0 * Math.sin(th)], a = [0, 0];
+    var n = Math.round((tEnd === undefined ? 1.0 : tEnd) / c.dt), out = [s.slice()];
+    for (var i = 0; i < n; i++) { step(K, s, a); out.push(s.slice()); }
+    return out;
+  }
+
+  function heightAt(c, thetaDeg, v0, rho) {
+    var K = kOf(c, v0), th = thetaDeg * DEG, s = [0, 0, v0 * Math.cos(th), v0 * Math.sin(th)], a = [0, 0];
+    var n = Math.round(LIM.T_MAX / c.dt), x0, z0, f;
+    for (var i = 0; i < n; i++) {
+      x0 = s[0]; z0 = s[1];
+      step(K, s, a);
+      if (s[0] >= rho) { f = (rho - x0) / (s[0] - x0); return z0 + f * (s[1] - z0); }
+      if (s[1] < -c.h0M) return -Infinity;   // hit the floor before reaching rho
+    }
+    return -Infinity;
+  }
+
+  function angleFor(c, dRobotIn) {
+    var h = c.hood;
+    if (h.mode === 'fixed') return h.angleDeg;
+    var t = h.table, n = t.length, i;
+    if (!n) return NaN;
+    if (dRobotIn <= t[0][0]) return t[0][1];
+    if (dRobotIn >= t[n - 1][0]) return t[n - 1][1];
+    for (i = 0; i < n - 1 && !(dRobotIn < t[i + 1][0]); i++);
+    return t[i][1] + (dRobotIn - t[i][0]) * (t[i + 1][1] - t[i][1]) / (t[i + 1][0] - t[i][0]);
+  }
+
+  function solveSpeed(c, dRobotIn) {
+    var th = angleFor(c, dRobotIn), rho = (dRobotIn - c.mouthForwardIn) * IN_M;
+    var res = { vMps: NaN, motorRpm: NaN, ticksPerSec: NaN, iterations: 0, ok: false, thetaDeg: th };
+    if (!(fin(th) && fin(rho) && rho > 0 && fin(c.aimZM) && fin(c.rpmPerMps) && fin(c.ticksPerMotorRev) && fin(c.h0M))) return res;
+    function f(v) { return heightAt(c, th, v, rho) - c.aimZM; }
+    var lo = LIM.V_LO, hi = lo, it = 1, mid;
+    if (!(f(lo) < 0)) return res;
+    // scan up in V_STEP m/s until the path first reaches the aim height: [lo, hi] then lies on the rising branch (z(rho) is not monotone for backspin at theta >= ~81 deg and v >~ 10 m/s)
+    var found = false;
+    while (!found && hi < LIM.V_HI) { lo = hi; hi = Math.min(hi + LIM.V_STEP, LIM.V_HI); found = f(hi) >= 0; it++; }
+    if (!found) { res.iterations = it; return res; }   // aim point not reachable below V_HI: beyond reach
+    while (hi - lo > LIM.V_TOL && it < LIM.MAX_IT) { mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; it++; }
+    res.iterations = it;
+    res.ok = hi - lo <= LIM.V_TOL;
+    if (!res.ok) return res;
+    res.vMps = (lo + hi) / 2;
+    res.motorRpm = res.vMps * c.rpmPerMps;
+    res.ticksPerSec = res.motorRpm / 60 * c.ticksPerMotorRev;
+    return res;
+  }
+
+  function constantsFrom(params, rows, E) {
+    var I = E._internal, np = I.normParams(params), bp = E.ballProps(np.ballId), A = E.constants().aero;
+    var use = (rows || []).filter(function (r) { return r && r.reachable && r.motorRpm && r.exitSpeedMps && r.exitSpeedMps.c > 0; });
+    var h0In = np.mouth.height, hd = params && params.hood;
+    var aim = use.filter(function (r) { return fin(r.aimZIn); }).map(function (r) { return (r.aimZIn - h0In) * IN_M; });
+    var table = use.filter(function (r) { return fin(r.launchDeg); }).map(function (r) { return [r.dRobotIn, r.launchDeg]; })
+      .sort(function (p, q) { return p[0] - q[0]; });
+    var hood = hd && hd.mode === 'fixed'
+      ? { mode: 'fixed', angleDeg: fin(hd.angleDeg) ? hd.angleDeg : median(table.map(function (p) { return p[1]; })) }
+      : { mode: 'adjustable', table: table };
+    return {
+      massKg: bp.massKg, areaM2: bp.areaM2, rho: A.rho, cd: A.cd, clSlope: A.clSlope, clSMax: A.clSMax, g: A.g,
+      S0: E.shooterSpin(params && params.shooter), dt: I.tableSpec.dt, h0M: h0In * IN_M, aimZM: median(aim), hood: hood,
+      rpmPerMps: median(use.map(function (r) { return r.motorRpm.c / r.exitSpeedMps.c; })),
+      ticksPerMotorRev: median(use.filter(function (r) { return r.ticksPerSec && r.motorRpm.c > 0; }).map(function (r) { return r.ticksPerSec.c / r.motorRpm.c * 60; })),
+      mouthForwardIn: use.length ? median(use.map(function (r) { return r.dRobotIn - r.dMouthIn; })) : 0
+    };
+  }
+
+  return { constantsFrom: constantsFrom, angleFor: angleFor, solveSpeed: solveSpeed, heightAt: heightAt, trajectory: trajectory, LIMITS: LIM };
+});
