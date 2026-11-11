@@ -20,6 +20,11 @@ const UI = [
   'src/engine-hood-sens.js', 'src/engine-hood-result.js', 'src/ui-reference.js', 'src/ui-hood-model.js', 'src/ui-plot-axes.js', 'src/ui-spin.js', 'tests/ui-spin.test.mjs', 'tests/spin.test.mjs', 'src/ui-entry.js', 'tests/ui-entry.test.mjs', 'tests/entry-capture.test.mjs', 'tests/entry-filter.test.mjs', 'tests/entry-evaluate.test.mjs',
   'src/config-schema.js', 'src/config-io.js', 'src/ui-config.js', 'tests/config-schema.test.mjs', 'tests/config-io.test.mjs', 'tests/ui-config.test.mjs',
   'src/hood.css',
+  // eta calibration (issue #11, E1-E7)
+  'src/calib-core.js', 'src/calib-plan.js', 'src/calib-fit.js', 'src/calib-csv.js', 'src/calib-video.js', 'src/calib-validate.js',
+  'src/ui-calib-grid.js', 'src/ui-calib-form.js', 'src/ui-calib-report.js',
+  'tests/calib-core.test.mjs', 'tests/calib-plan.test.mjs', 'tests/calib-fit.test.mjs', 'tests/calib-io.test.mjs', 'tests/calib-validate.test.mjs',
+  'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));
