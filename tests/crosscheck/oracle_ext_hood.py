@@ -103,7 +103,7 @@ def centre_aim(H, sp, a, b, c, top):
         nxt = (nb, (rc[0] + rc[1]) // 2 if rc else c)
         if nxt in seen:
             return nxt if seen.index(nxt) == len(seen) - 1 else seen[seen.index(nxt)]
-        seen.append(nxt)
+        seen.append(nxt); b, c = nxt
     return seen[-1]
 
 def analyse(H, th, sp, adjustable, v_cap=None):

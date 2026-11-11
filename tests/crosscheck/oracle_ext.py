@@ -166,7 +166,12 @@ def selftest():
         chk('10 spin top is rejected until B2', False)
     except ValueError:
         chk('10 spin top is rejected until B2', True)
-    from oracle_ext_hood import selftest as hood_selftest
+    from oracle_ext_hood import selftest as hood_selftest, centre_aim
+    Hr = np.zeros((1, 40, 9), bool)                 # diagonal ridge: the centre aim must walk along it and stop at a fixed point
+    for k in range(9):
+        Hr[0, 5 + k:12 + k, k] = True
+    r1 = centre_aim(Hr, list(np.linspace(1, 2, 40)), 0, 8, 0, 39)
+    chk('11 centre aim walks a ridge and ends at a fixed point (regression: it once never advanced)', r1 != (8, 0) and centre_aim(Hr, list(np.linspace(1, 2, 40)), 0, r1[0], r1[1], 39) == r1)
     h_ok = hood_selftest(field)
     print('oracle_ext selftest: %d passed, %d failed; hood %s' % (ok[0], ok[1], 'ok' if h_ok else 'FAILED'))
     return ok[1] == 0 and h_ok
