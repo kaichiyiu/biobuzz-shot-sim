@@ -8,8 +8,8 @@ import { ROOT } from './load-data.mjs';
 const MAX = 200;
 // engine side: must exist
 const ENGINE = [
-  'src/engine-rect.js', 'src/engine-hood-core.js', 'src/engine-hood.js', 'src/engine-sweep.js',
-  'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
+  'src/engine-rect.js', 'src/engine-hood-core.js', 'src/engine-hood.js', 'src/engine-sweep.js', 'src/engine-entry.js',
+  'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/hood-search.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
   'tests/fixtures/make-baseline.mjs',
 ];
 // UI side (other developer): checked when present; split seams are in the plan
@@ -17,8 +17,21 @@ const UI = [
   'src/ui-panels.js', 'src/ui-results.js', 'src/ui-window.js', 'src/ui-hood.js', 'src/ui-hood-error.js', 'src/ui-rpm-plot.js',
   'src/panel.css', 'tests/ui-hood.test.mjs', 'tests/units-range.test.mjs', 'tests/ui-window.test.mjs',
   // seam files the plan allows when a budget is exceeded
-  'src/engine-hood-sens.js', 'src/engine-hood-result.js', 'src/ui-reference.js', 'src/ui-hood-model.js', 'src/ui-plot-axes.js',
+  'src/engine-hood-sens.js', 'src/engine-hood-result.js', 'src/ui-reference.js', 'src/ui-hood-model.js', 'src/ui-plot-axes.js', 'src/ui-spin.js', 'tests/ui-spin.test.mjs', 'tests/spin.test.mjs', 'src/ui-entry.js', 'tests/ui-entry.test.mjs', 'tests/entry-capture.test.mjs', 'tests/entry-filter.test.mjs', 'tests/entry-evaluate.test.mjs',
+  'src/config-schema.js', 'src/config-io.js', 'src/ui-config.js', 'tests/config-schema.test.mjs', 'tests/config-io.test.mjs', 'tests/ui-config.test.mjs',
   'src/hood.css',
+  // eta calibration (issue #11, E1-E7)
+  'src/calib-core.js', 'src/calib-plan.js', 'src/calib-fit.js', 'src/calib-csv.js', 'src/calib-video.js', 'src/calib-validate.js',
+  'src/ui-calib-grid.js', 'src/ui-calib-form.js', 'src/ui-calib-report.js',
+  // export (issue #4, F1-F7)
+  'src/engine-export.js', 'src/engine-export-bearing.js', 'src/worker-export.js', 'src/export-format.js', 'src/export-runner.js', 'src/ui-export.js', 'src/ui-export-panel.js', 'src/ui-accuracy.js',
+  'tests/export-row.test.mjs', 'tests/export-bearing.test.mjs', 'tests/worker-export.test.mjs', 'tests/export-format.test.mjs', 'tests/export-runner.test.mjs', 'tests/ui-export.test.mjs', 'tests/ui-accuracy.test.mjs',
+  // on-robot solver (issue #4, G1-G5)
+  'src/export-solver.js', 'src/export-java.js', 'src/export-compare.js', 'src/ui-export-algo.js', 'src/templates/ShotSolver.java.txt',
+  'src/export-tex.js', 'src/templates/derivation.tex.txt', 'tests/export-tex.test.mjs', 'tests/export-rpm-map.test.mjs',
+  'tests/export-solver.test.mjs', 'tests/export-java.test.mjs', 'tests/export-compare.test.mjs', 'tests/java-port.test.mjs', 'tests/ui-export-algo.test.mjs',
+  'tests/calib-core.test.mjs', 'tests/calib-plan.test.mjs', 'tests/calib-fit.test.mjs', 'tests/calib-io.test.mjs', 'tests/calib-validate.test.mjs',
+  'tests/ui-calib-form.test.mjs', 'tests/ui-calib-report.test.mjs', 'tests/config-schema-calib.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));

@@ -123,6 +123,12 @@
     aw = { a: aw.a, width: sp[rb.bHi] - sp[rb.bLo], bLo: rb.bLo, bHi: rb.bHi, c: set.c, cLo: aw.cLo, cHi: aw.cHi };
     set = { a: set.a, b: nb, c: rc ? (rc.cLo + rc.cHi) >> 1 : set.c, v: (sp[rb.bLo] + sp[rb.bHi]) / 2, yaw: rc ? (view.yaws[rc.cLo] + view.yaws[rc.cHi]) / 2 : yawC };
     var sel = aimAt(view, p, mo, sh, bp, set, ignoreCap), h = { opt: opt, aw: aw, set: set, vLo: sp[aw.bLo], vHi: sp[aw.bHi] };
+    if (opt && !hint && aw.bHi === aw.bLo) {   // coarse pick is one lattice node: the 2 % speed lattice cannot rank angles. Extent of the tie set (floor as in pickOptimalAngle)
+      var m = list.reduce(function (q, w, i) { return w.bLo >= 0 && (q < 0 || w.width > list[q].width) ? i : q; }, -1), fl = opt.width - HC.stepAt(sp, list[m].bHi) - 1e-12;
+      h.tie = list.reduce(function (t, w) {
+        return w.bLo < 0 || w.width < fl ? t : { t0: Math.min(t.t0, th[w.a]), t1: Math.max(t.t1, th[w.a]), v0: Math.min(t.v0, sp[w.bLo]), v1: Math.max(t.v1, sp[w.bHi]), ln: t.ln };
+      }, { t0: 90, t1: 0, v0: 99, v1: 0, ln: view.lnStep });
+    }
     if (opt) {
       var atLo = opt.aLo === rg[0] && th[rg[0]] - hn.lo < view.thStep + EPS, atHi = opt.aHi === rg[1] && hn.hi - th[rg[1]] < view.thStep + EPS;
       h.rangeDeg = [th[opt.aLo], th[opt.aHi]]; h.atLo = atLo; h.atHi = atHi;
@@ -136,8 +142,14 @@
 
   // fine view: exact fixed angle (or the coarse middle angle), speed span wide enough for the whole coarse window
   function fineOpts(sel, hn) {
-    var h = sel.hood, fixed = hn.mode === 'fixed', span = Math.max(0.06, 0.5 * Math.log(h.vHi / h.vLo) + 0.02);
+    var h = sel.hood, fixed = hn.mode === 'fixed', span = Math.max(0.06, 0.5 * Math.log(h.vHi / h.vLo) + 0.02), t = h.tie;
     // adjustable: the analysis span is fixed (+-6 deg angle, +-6 deg yaw, +-12 % speed) so it does not depend on the precision preset
+    if (t && (t.t0 - 1 < sel.theta - 6 || t.t1 + 1 > sel.theta + 6 || Math.max(Math.log(t.v1 / sel.v), Math.log(sel.v / t.v0)) + t.ln > Math.max(0.12, span))) {
+      // tie set outside the fine reach: view = hull(old view, tie set) superset of the old one (same nodes), independent of the seed
+      var a0 = Math.min(t.t0 - 1, sel.theta - 6), a1 = Math.max(t.t1 + 1, sel.theta + 6);   // not clipped to the hood: the angle scatter needs cells beyond the limits; ranking stays inside (angleIndexRange)
+      return { theta: Math.round((a0 + a1) * 2) / 4, thSpan: (a1 - a0) / 2, yawSpan: 6, skipAim: true,
+        vSpanLn: Math.max(0.12, span, Math.log(t.v1 / sel.v) + t.ln + 0.01, Math.log(sel.v / t.v0) + t.ln + 0.01) };
+    }
     return { theta: fixed ? hn.angleDeg : sel.theta, vSpanLn: fixed ? span : Math.max(0.12, span), thSpan: fixed ? 0 : 6, yawSpan: 6, skipAim: true };
   }
 

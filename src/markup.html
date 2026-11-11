@@ -12,6 +12,7 @@
       </div>
     </div>
     <div class="topbar-right">
+      <div id="configHost" class="ext-host"></div>
       <div class="seg units-seg" role="group" aria-label="Units" data-key="units">
         <button type="button" data-v="imperial">in · ft/s · oz</button><button type="button" data-v="metric">cm · m/s · g</button>
       </div>
@@ -37,6 +38,7 @@
       </div>
       <div class="field-wrap" id="fieldWrap">
         <canvas id="field" tabindex="0" aria-describedby="fieldHint" aria-label="Field. The shooter mouth can be dragged anywhere; arrow keys move it."></canvas>
+        <div id="mapHost" class="ext-map"></div>
       </div>
       <div class="field-foot">
         <div class="legend" id="fieldLegend">
@@ -64,6 +66,9 @@
             <label class="ctl"><span class="label">Mouth height above tiles <output id="h0Out"></output></span>
               <input type="range" id="h0" min="4" max="29" step="1"></label>
             <div id="hoodHost"></div>
+            <div id="spinHost" class="ext-host"></div>
+            <div id="flywheelHost" class="ext-host"></div>
+            <div id="entryHost" class="ext-host"></div>
           </fieldset>
 
           <fieldset>
@@ -162,6 +167,7 @@
 
       <section class="panel readout" id="arcPanel" aria-labelledby="arc-h">
         <div class="arc-head" aria-live="polite" aria-atomic="true">
+          <div id="toleranceHost" class="ext-host"></div>
           <div class="title-bar"><h2 class="ally" id="arc-h">Required arc</h2><span class="verdict-badge" id="verdictBadge" hidden></span></div>
           <p class="reason" id="reason">Calculating the best arc…</p>
           <div class="chips" id="warnings"></div>
@@ -172,6 +178,7 @@
           <p class="info-note" id="windowNote"></p>
           <dl class="kv rows" id="windowReadout"></dl>
         </div>
+        <div id="burstHost" class="ext-host"></div>
         <button type="button" class="btn math-btn" id="mathBtn" aria-haspopup="dialog">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h11M2.5 13h11M5 5.5 11 8 5 10.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Show the math
@@ -208,6 +215,10 @@
         <div class="view rpm-card" id="rpmCard" hidden>
           <div class="view-head"><h3>RPM vs distance</h3><span class="help" id="rpmNote">Fixed hood: motor rpm that scores, along the line from here to the CELL.</span></div>
           <svg id="rpmPlot" viewBox="0 0 640 250" role="img" aria-label="Motor rpm window against distance to the CELL"></svg>
+        </div>
+        <div class="ext-card" id="extCard">
+          <div id="exportHost" class="ext-host"></div>
+          <div id="calibHost" class="ext-host"></div>
         </div>
       </div>
     </section>

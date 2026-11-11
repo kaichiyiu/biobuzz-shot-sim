@@ -90,10 +90,27 @@
     return { total: total, wheelI: w.inertiaKgM2, n: n, addOn: add, hub: HUB_I, text: text };
   }
 
+  // UI hook bus (window.ShotUI.hooks, see PLAN 2.9): a throwing hook is logged and never breaks the legacy flow
+  var HOOKS = (UI.hooks || []);
+  function callHooks(name) {
+    var a = Array.prototype.slice.call(arguments, 1);
+    HOOKS.forEach(function (h) {
+      if (!h || typeof h[name] !== 'function') return;
+      try { h[name].apply(h, a); } catch (e) { console.warn('ShotUI hook "' + (h.name || '?') + '".' + name + ' failed:', e); }
+    });
+  }
+  function extendParams(p) {
+    return HOOKS.reduce(function (q, h) {
+      if (!h || typeof h.extendParams !== 'function') return q;
+      try { var r = h.extendParams(q, state); return r && typeof r === 'object' ? r : q; }
+      catch (e) { console.warn('ShotUI hook "' + (h.name || '?') + '".extendParams failed:', e); return q; }
+    }, p);
+  }
+
   function params(at) {
     var pr = SH.precision[state.precision], s = state.shooter;
     var inert = flywheelInertia(s);
-    return {
+    var p = {
       ballId: state.ballId, target: state.target, hiveState: { red: state.hive.red, blue: state.hive.blue },
       mouth: { x: at ? at.x : state.mouth.x, y: at ? at.y : state.mouth.y, height: state.h0 },
       precision: { sigThetaDeg: pr.sigThetaDeg, sigYawDeg: pr.sigYawDeg, sigShooter: pr.sigShooter },
@@ -104,6 +121,7 @@
         etaSingle: s.etaSingle, etaDual: s.etaDual, control: s.control, batteryV: s.batteryV
       }
     };
+    return extendParams(p);
   }
 
   // ------------------------------------------------------------------ palette
@@ -288,6 +306,7 @@
     drawField();
     if (mode === 'full') { drawSide(); three.update(); if (mathDialog.open) renderMath(); }
     UI.rpmPlot.update(backend, p, r, mode);
+    callHooks('onResult', r, p, mode);
   }
   function renderResults(r, p) {
     if (!UI.hoodError.active()) { UI.results.renderBadge(r); UI.results.renderArc(r, p); UI.results.renderReference(r); }
@@ -1090,6 +1109,7 @@
     syncControls();
     if (opts && opts.hive) { hiveCache.key = ''; three.rebuild(); }
     drawField();
+    callHooks('onChange', state);
     if (hoodGate()) return;
     request('coarse');
     requestFull();
@@ -1318,6 +1338,7 @@
     }
     eq(s6, 'Hit rate', 'share of scattered shots that score', '', pct(r.hitRate, 0));
     eq(s6, 'Verdict', '≥ 80% (and PID under 92% speed) → POSSIBLE · 40–80% → NOT CONSISTENT · under 40%, no arc, or too slow → WON’T WORK', '', r.verdict);
+    callHooks('onMathRender', body, r, p);
   }
 
   $('mathBtn').addEventListener('click', function () {
@@ -1350,6 +1371,11 @@
   three.resize();
   three.rebuild();
   hoodGate();
+  callHooks('onStart', {
+    state: state, recalc: function () { changed(); }, current: function () { return current; },
+    field: { wrap: $('fieldWrap'), sx: sx, sy: sy, k: k, toWorld: toWorld },
+    fmt: { nf: nf, L10n: L10n }, units: U, data: D, engine: E
+  });
   makeBackend().then(function (b) {
     backend = b;
     $('engineState').textContent = 'Engine: ' + b.kind;

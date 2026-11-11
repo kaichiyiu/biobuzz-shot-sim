@@ -384,8 +384,11 @@
    *   monoIdx  = first index from which rho never decreases again (backspin can pull steep lobs back)
    *   preMaxRho = max rho over [0, monoIdx]
    * lim = {tMax, rhoMax, zStop} (truncation, SPEC 4); defaults are the table limits.
+   * abuf (optional Int16Array, length >= MAX_SAMPLES, #12): SINE of the flight-path angle, 32767 * vz / |v| truncated toward 0 by the Int16 store (Math.round measured ~10 ms slower per table), of every stored
+   * sample (abuf[n] belongs to buf[2n], buf[2n+1]; abuf[0] = launch angle). Exact velocity direction, not derived from rounded
+   * positions; sine instead of the angle itself saves an atan2 per sample (decode: sineAngleDeg, valid for vx >= 0).
    */
-  function fly(K, S0, thetaDeg, v0, buf, info, lim) {
+  function fly(K, S0, thetaDeg, v0, buf, info, lim, abuf) {
     var th = thetaDeg * DEG;
     var x = 0, z = 0, vx = v0 * Math.cos(th), vz = v0 * Math.sin(th);
     var wr = S0 * v0;
@@ -397,19 +400,20 @@
     var maxN = (buf.length >> 1);
     var nStepsMax = Math.round(tMax / dt);
     buf[0] = 0; buf[1] = 0;
+    if (abuf) abuf[0] = 32767 * Math.sin(th);
     var n = 1, apexIdx = 0, apexZ = 0, step = 0;
     var V, Sr, kl, a1x, a1z, a2x, a2z, a3x, a3z, a4x, a4z, vx2, vz2, vx3, vz3, vx4, vz4;
     for (;;) {
-      V = Math.sqrt(vx * vx + vz * vz); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx * vx + vz * vz); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a1x = -kd * V * vx - kl * V * vz; a1z = -g - kd * V * vz + kl * V * vx;
       vx2 = vx + h2 * a1x; vz2 = vz + h2 * a1z;
-      V = Math.sqrt(vx2 * vx2 + vz2 * vz2); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx2 * vx2 + vz2 * vz2); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a2x = -kd * V * vx2 - kl * V * vz2; a2z = -g - kd * V * vz2 + kl * V * vx2;
       vx3 = vx + h2 * a2x; vz3 = vz + h2 * a2z;
-      V = Math.sqrt(vx3 * vx3 + vz3 * vz3); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx3 * vx3 + vz3 * vz3); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a3x = -kd * V * vx3 - kl * V * vz3; a3z = -g - kd * V * vz3 + kl * V * vx3;
       vx4 = vx + dt * a3x; vz4 = vz + dt * a3z;
-      V = Math.sqrt(vx4 * vx4 + vz4 * vz4); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; kl = kl0 * Sr;
+      V = Math.sqrt(vx4 * vx4 + vz4 * vz4); Sr = V > 1e-9 ? wr / V : 0; if (Sr > smax) Sr = smax; else if (Sr < -smax) Sr = -smax; kl = kl0 * Sr;
       a4x = -kd * V * vx4 - kl * V * vz4; a4z = -g - kd * V * vz4 + kl * V * vx4;
       x += h6 * (vx + 2 * vx2 + 2 * vx3 + vx4);
       z += h6 * (vz + 2 * vz2 + 2 * vz3 + vz4);
@@ -421,6 +425,7 @@
         if (zm > 32767) zm = 32767; else if (zm < -32768) zm = -32768;
         if (xm > 32767) xm = 32767; else if (xm < -32768) xm = -32768;
         buf[2 * n] = xm; buf[2 * n + 1] = zm;
+        if (abuf) abuf[n] = 32767 * vz / Math.sqrt(vx * vx + vz * vz);   // Int16 store truncates toward 0: error < 1 LSB, sign kept
         if (zm >= apexZ) { apexZ = zm; apexIdx = n; }
         n++;
         if ((vz < 0 && z < zStop) || step >= nStepsMax || x > rhoMax || n >= maxN) break;
@@ -434,6 +439,12 @@
     return n;
   }
 
+  // flight-path angle (deg, -90..90) from a (interpolated) abuf value: asin(s / 32767), clamped against rounding overshoot
+  function sineAngleDeg(s) {
+    s /= 32767;
+    return Math.asin(s > 1 ? 1 : (s < -1 ? -1 : s)) / DEG;
+  }
+
   // float path for tests/drawing without quantisation (same integrator maths), SI units
   function flyFloat(ballId, S0, thetaDeg, v0, opts) {
     need();
@@ -442,7 +453,7 @@
     var dt = num(opts.dt, TBL.dt), tEnd = num(opts.tEnd, 1.0);
     var th = thetaDeg * DEG, x = 0, z = 0, vx = v0 * Math.cos(th), vz = v0 * Math.sin(th), wr = S0 * v0;
     function acc(ux, uz) {
-      var V = Math.sqrt(ux * ux + uz * uz), Sr = V > 1e-9 ? wr / V : 0; if (Sr > K.smax) Sr = K.smax;
+      var V = Math.sqrt(ux * ux + uz * uz), Sr = V > 1e-9 ? wr / V : 0; if (Sr > K.smax) Sr = K.smax; else if (Sr < -K.smax) Sr = -K.smax;
       var kl = K.kl0 * Sr;
       return [-K.kd * V * ux - kl * V * uz, -K.g - K.kd * V * uz + kl * V * ux];
     }
@@ -483,14 +494,15 @@
     for (var a = TBL.th0; a <= TBL.th1; a++) th.push(a);
     var sp = tableSpeeds();
     var nT = th.length, nV = sp.length, N = nT * nV;
-    var trajs = new Array(N), lens = new Int32Array(N), apex = new Int32Array(N), mono = new Int32Array(N), preMax = new Int32Array(N);
-    var buf = new Int16Array(2 * MAX_SAMPLES), info = new Int32Array(4);
+    var trajs = new Array(N), angs = new Array(N), lens = new Int32Array(N), apex = new Int32Array(N), mono = new Int32Array(N), preMax = new Int32Array(N);
+    var buf = new Int16Array(2 * MAX_SAMPLES), abuf = new Int16Array(MAX_SAMPLES), info = new Int32Array(4);
     var samples = 0;
     for (var i = 0; i < nT; i++) {
       for (var j = 0; j < nV; j++) {
         var idx = i * nV + j;
-        fly(K, S0, th[i], sp[j], buf, info);
+        fly(K, S0, th[i], sp[j], buf, info, undefined, abuf);
         trajs[idx] = buf.slice(0, 2 * info[0]);
+        angs[idx] = abuf.slice(0, info[0]);   // (#12) sine of the flight-path angle, Int16 x 32767
         lens[idx] = info[0]; apex[idx] = info[1]; mono[idx] = info[2]; preMax[idx] = info[3];
         samples += info[0];
       }
@@ -498,8 +510,8 @@
     var tbl = {
       key: key, ballId: ballId, S0: S0, rIn: bp.rIn, K: K,
       thetas: Float64Array.from(th), speeds: Float64Array.from(sp), thStep: 1, lnStep: Math.log(TBL.vRatio),
-      nT: nT, nV: nV, trajs: trajs, lens: lens, apex: apex, mono: mono, preMax: preMax,
-      samples: samples, bytes: samples * 4, buildMs: 0, hits: 0
+      nT: nT, nV: nV, trajs: trajs, angs: angs, lens: lens, apex: apex, mono: mono, preMax: preMax,
+      samples: samples, bytes: samples * 6, buildMs: 0, hits: 0
     };
     tbl.buildMs = now() - t0;
     S.tables[key] = tbl;
@@ -534,14 +546,15 @@
       etaSingle: clamp(num(sh.etaSingle, S.model.etaSingle), 0.01, 1),
       etaDual: clamp(num(sh.etaDual, S.model.etaDual), 0.01, 1.5),
       batteryV: clamp(num(sh.batteryV, S.model.batteryV), 9, 15),
-      control: sh.control === 'power' ? 'power' : 'pid'
+      control: sh.control === 'power' ? 'power' : 'pid',
+      spin: sh.type !== 'dual' && sh.spin === 'top' ? 'top' : 'back'
     };
   }
 
   function shooterSpin(shooter) {
     var sh = shooterNorm(shooter);
     if (sh.type === 'dual') return (1 - sh.topRatio) / (1 + sh.topRatio);
-    return 1;
+    return sh.spin === 'top' ? -1 : 1;
   }
 
   function defaultMotorId() {
@@ -888,7 +901,7 @@
    * a cheap explanatory cause. hits/causes are written at base + y.
    */
   var _out = { code: 0, k: 0, t: 0 };
-  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits) {   // rhits: optional zero-filled rect-hit output (#3)
+  function testTraj(ctx, ycs, P, n, apexIdx, mono, preMax, hits, causes, base, rhits, eout, A) {   // rhits: optional zero-filled rect-hit output (#3); eout: optional NaN-filled entry output (#12); A: optional sine-of-angle track of P (fly abuf)
     var G = S.G, nY = ycs.length, y;
     var kz = cantIndex(ctx, P, n, apexIdx);
     var zLo = ctx.zBandLoMM, zHi = ctx.zBandHiMM;
@@ -956,7 +969,14 @@
       if (cand) {
         var code = runTest(ctx, yc, P, n, apexIdx, mono, preMax, kz, _out);
         hits[base + y] = code === C_HIT ? 1 : 0;
-        if (rhits && code === C_HIT && q <= G.W2 - ctx.r && B >= ctx.r && B <= G.SH - ctx.r) rhits[base + y] = 1;   // crossing (q, B) of the candidate
+        if (rhits && code === C_HIT && q <= G.W2 - ctx.r && B >= ctx.r && B <= G.SH - ctx.r) {   // crossing (q, B) of the candidate
+          rhits[base + y] = 1;
+          if (eout) {   // entry angle (deg, < 0 descending) and speed (m/s) of the candidate-crossing segment, same formula as classifyCore
+            var eR = P[2 * kk] - P[2 * kk - 2], eZ = P[2 * kk + 1] - P[2 * kk - 1], ei = 2 * (base + y);
+            eout[ei] = A ? sineAngleDeg(A[kk - 1] + t * (A[kk] - A[kk - 1])) : Math.atan2(eZ, eR) / DEG;   // exact: angle track interpolated at the crossing fraction t
+            eout[ei + 1] = Math.sqrt(eR * eR + eZ * eZ) / 1000 / (TBL.dt * TBL.storeEvery);
+          }
+        }
         causes[base + y] = code;
         if (code === C_HIT) nh++;
       } else {
@@ -989,14 +1009,15 @@
     var ycs = fan.yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nT = table.nT, nV = table.nV, nY = ycs.length, N = nT * nV;
     var hits = new Uint8Array(N * nY), causes = new Uint8Array(N * nY), rectHits = new Uint8Array(N * nY);
+    var entry = new Float32Array(2 * N * nY).fill(NaN);   // (#12) [2i] angle deg, [2i+1] speed m/s at rect-hit cells, else NaN
     var nHits = 0, minHitJ = nV;
     for (var idx = 0; idx < N; idx++) {
-      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY, rectHits);
+      var nh = testTraj(ctx, ycs, table.trajs[idx], table.lens[idx], table.apex[idx], table.mono[idx], table.preMax[idx], hits, causes, idx * nY, rectHits, entry, table.angs[idx]);
       if (nh > 0) { nHits += nh; var j = idx % nV; if (j < minHitJ) minHitJ = j; }
     }
     var grid = {
       key: key, table: table, ctx: ctx, ycs: ycs, yaws: fan.yaws, dPsi: fan.dPsi,
-      nA: nT, nB: nV, nC: nY, hits: hits, rectHits: rectHits, causes: causes, nHits: nHits,
+      nA: nT, nB: nV, nC: nY, hits: hits, rectHits: rectHits, entry: entry, causes: causes, nHits: nHits,
       minHitV: minHitJ < nV ? table.speeds[minHitJ] : null,
       ms: 0
     };
@@ -1203,9 +1224,9 @@
   }
 
   // ------------------------------------------------------------------ fine stage (SPEC 7.5)
-  var _fbuf = null, _finfo = new Int32Array(4);
+  var _fbuf = null, _fabuf = null, _finfo = new Int32Array(4);
   function fineStage(p, table, grid, sel, mo, sh, bp, opts) {   // opts (hood): { theta, vSpanLn, thSpan, yawSpan, skipAim }
-    if (!_fbuf) _fbuf = new Int16Array(2 * MAX_SAMPLES);
+    if (!_fbuf) { _fbuf = new Int16Array(2 * MAX_SAMPLES); _fabuf = new Int16Array(MAX_SAMPLES); }
     var ctx = grid.ctx, pr = p.precision;
     var Wt = Math.max(3, 3 * pr.sigThetaDeg), Wp = Math.max(3, 3 * pr.sigYawDeg), Wv = Math.max(0.06, 3 * sel.sigV);
     if (opts) { if (opts.vSpanLn > Wv) Wv = opts.vSpanLn; if (opts.thSpan > Wt) Wt = opts.thSpan; if (opts.yawSpan > Wp) Wp = opts.yawSpan; }
@@ -1220,15 +1241,16 @@
     for (i = -n; i <= n; i++) { var vv = i === 0 ? sel.v : Math.exp(lv0 + i * 0.005); if (vv >= 0.5 && vv <= 40) sps.push(vv); }
     var nA = ths.length, nB = sps.length, nC = yaws.length;
     var hits = new Uint8Array(nA * nB * nC), causes = new Uint8Array(nA * nB * nC), rectHits = new Uint8Array(nA * nB * nC);
+    var entry = new Float32Array(2 * nA * nB * nC).fill(NaN);
     var ycs = yaws.map(function (psi) { return yawCtx(ctx, psi); });
     var nHits = 0;
     for (var a = 0; a < nA; a++) {
       for (var b = 0; b < nB; b++) {
-        fly(table.K, table.S0, ths[a], sps[b], _fbuf, _finfo);
-        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC, rectHits);
+        fly(table.K, table.S0, ths[a], sps[b], _fbuf, _finfo, undefined, _fabuf);
+        nHits += testTraj(ctx, ycs, _fbuf, _finfo[0], _finfo[1], _finfo[2], _finfo[3], hits, causes, (a * nB + b) * nC, rectHits, entry, _fabuf);
       }
     }
-    var view = { hits: hits, rectHits: rectHits, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
+    var view = { hits: hits, rectHits: rectHits, entry: entry, causes: causes, nA: nA, nB: nB, nC: nC, thetas: ths, speeds: sps, yaws: yaws,
       thStep: 0.25, lnStep: 0.005, yawStep: 0.25, nHits: nHits };
     var fsel = nHits && !(opts && opts.skipAim) ? selectAim(view, p, mo, sh, bp, false) : null;
     return { view: view, sel: fsel };
@@ -1236,12 +1258,12 @@
 
   function coarseView(grid) {
     var t = grid.table;
-    return { hits: grid.hits, rectHits: grid.rectHits, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
+    return { hits: grid.hits, rectHits: grid.rectHits, entry: grid.entry, causes: grid.causes, nA: grid.nA, nB: grid.nB, nC: grid.nC,
       thetas: t.thetas, speeds: t.speeds, yaws: grid.yaws, thStep: t.thStep, lnStep: t.lnStep, yawStep: grid.dPsi, nHits: grid.nHits };
   }
 
   // ------------------------------------------------------------------ single shot (cross-check + drawing)
-  var _cbuf = null, _cinfo = new Int32Array(4), _ctxCache = { key: null, ctx: null };
+  var _cbuf = null, _cabuf = null, _cinfo = new Int32Array(4), _ctxCache = { key: null, ctx: null };
   function ctxFor(p, rIn) {
     var key = gridKey(p, 0) + '|' + rIn;
     if (_ctxCache.key !== key) { _ctxCache.key = key; _ctxCache.ctx = makeCtx(p, rIn); }
@@ -1249,9 +1271,9 @@
   }
 
   function classifyCore(p, ctx, K, S0, thetaDeg, v, yawDeg) {
-    if (!_cbuf) _cbuf = new Int16Array(2 * MAX_SAMPLES);
-    var P = _cbuf, info = _cinfo, G = S.G;
-    fly(K, S0, thetaDeg, v, P, info);
+    if (!_cbuf) { _cbuf = new Int16Array(2 * MAX_SAMPLES); _cabuf = new Int16Array(MAX_SAMPLES); }
+    var P = _cbuf, A = _cabuf, info = _cinfo, G = S.G;
+    fly(K, S0, thetaDeg, v, P, info, undefined, A);
     var n = info[0], apexIdx = info[1];
     var kz = cantIndex(ctx, P, n, apexIdx);
     var yc = yawCtx(ctx, yawDeg);
@@ -1270,7 +1292,7 @@
     path.push([x0 + rE * c, y0 + rE * s, h0 + zE * IPM]);
     if (h0 + zE * IPM > apex) apex = h0 + zE * IPM;
     // last inward crossing of the mouth plane inside the pentagon, before the decision point
-    var tTo = null, vIn = null, T = ctx.T;
+    var tTo = null, vIn = null, aIn = null, T = ctx.T;
     var fp = yc.fA * P[0] + yc.fB * P[1] + yc.fC;
     for (i = 1; i <= kEnd; i++) {
       var fk = yc.fA * P[2 * i] + yc.fB * P[2 * i + 1] + yc.fC;
@@ -1282,12 +1304,29 @@
           if (insidePentagon(bw[0], bw[2])) {
             tTo = (i - 1 + tc) * TBL.dt * TBL.storeEvery;
             vIn = Math.hypot(P[2 * i] - P[2 * i - 2], P[2 * i + 1] - P[2 * i - 1]) / 1000 / (TBL.dt * TBL.storeEvery);
+            aIn = sineAngleDeg(A[i - 1] + tc * (A[i] - A[i - 1]));   // < 0 descending (#12); exact flight-path angle interpolated at the crossing
           }
         }
       }
       fp = fk;
     }
-    return { hit: code === C_HIT, cause: code === C_HIT ? null : CAUSE_NAMES[code], path: path, apexIn: apex, tToCell: tTo, entrySpeed: vIn, code: code };
+    // rect hit (#12): testTraj's rule at its first candidate crossing (inside the pentagon with >= 0.5 r clearance), only for pentagon hits
+    var rectHit = false;
+    if (code === C_HIT) {
+      var kzEnd = kz < n - 1 ? kz : n - 1;
+      fp = yc.fA * P[0] + yc.fB * P[1] + yc.fC;
+      for (i = 1; i <= kzEnd; i++) {
+        var fk2 = yc.fA * P[2 * i] + yc.fB * P[2 * i + 1] + yc.fC;
+        if (fp >= 0 && fk2 < 0) {
+          var t2 = fp / (fp - fk2), rr2 = P[2 * i - 2] + t2 * (P[2 * i] - P[2 * i - 2]), zz2 = P[2 * i - 1] + t2 * (P[2 * i + 1] - P[2 * i - 1]);
+          var py2 = y0 + rr2 * s, dz2 = h0 + zz2 * IPM - G.pz, B2 = -T.sg * py2 * G.sa + dz2 * G.ca - G.b0, q2 = x0 + rr2 * c - T.hx;
+          if (q2 < 0) q2 = -q2;
+          if (insideqb(q2, B2) && dEdge2qb(q2, B2) >= 0.25 * ctx.r2) { rectHit = q2 <= G.W2 - ctx.r && B2 >= ctx.r && B2 <= G.SH - ctx.r; break; }
+        }
+        fp = fk2;
+      }
+    }
+    return { hit: code === C_HIT, cause: code === C_HIT ? null : CAUSE_NAMES[code], path: path, apexIn: apex, tToCell: tTo, entrySpeed: vIn, entryAngleDeg: aIn, rectHit: rectHit, code: code };
   }
 
   function classifyShot(params, thetaDeg, v, yawDeg) {
@@ -1437,6 +1476,8 @@
     var tableMs = now() - t0;
     var t1 = now();
     var grid = getGrid(p, table), ctx = grid.ctx, view = coarseView(grid);
+    var en = params && params.entry && EXT.entry ? EXT.entry.norm(params.entry) : null;   // entry rule (#12): applied to a copy of the view, the grid cache stays rule-independent
+    if (en && en.rule !== 'any') view = EXT.entry.filterView(view, en);
     var pr = p.precision;
     var res = {
       verdict: VERDICT.BAD, code: 'NO_ARC', hitRate: 0, reason: '',
@@ -1475,6 +1516,7 @@
       if (!uncapped && mode === 'full') {
         var tf = now();
         var fine = fineStage(p, table, grid, sel, mo, sh, bp, hx && hx.fineOpts(sel, hn));
+        if (en && en.rule !== 'any') fine.view = EXT.entry.filterView(fine.view, en);
         if (hx) fine.sel = hx.fineAim(fine.view, p, mo, sh, bp, hn, sel);
         if (fine.sel) { sel = fine.sel; v = fine.view; }
         fineMs = now() - tf;
@@ -1507,6 +1549,7 @@
     // heading to point the mouth (engine frame, deg CCW from +x): the best arc's yaw, else the line to the CELL
     res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
     if (hx) res.hood = hx.result(v || view, sel, res, hn, mode, { mo: mo, sh: sh, bp: bp });
+    if (en) res.entry = EXT.entry.result(v || view, sel, p, en, view);
     res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
