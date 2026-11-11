@@ -11,6 +11,9 @@ const ENGINE = [
   'src/engine-rect.js', 'src/engine-hood-core.js', 'src/engine-hood.js', 'src/engine-sweep.js', 'src/engine-entry.js',
   'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/hood-search.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
   'tests/fixtures/make-baseline.mjs',
+  // tolerance model (issue #7 / #8, I1-I4) and robot footprint (J1)
+  'src/engine-tolerance-core.js', 'src/engine-tolerance-along.js', 'src/engine-tolerance.js', 'src/footprint.js',
+  'tests/tolerance-core.test.mjs', 'tests/tolerance-along.test.mjs', 'tests/tolerance.test.mjs', 'tests/tolerance-evaluate.test.mjs', 'tests/footprint.test.mjs',
 ];
 // UI side (other developer): checked when present; split seams are in the plan
 const UI = [
