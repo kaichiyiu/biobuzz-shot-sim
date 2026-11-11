@@ -1464,6 +1464,8 @@
     var tableMs = now() - t0;
     var t1 = now();
     var grid = getGrid(p, table), ctx = grid.ctx, view = coarseView(grid);
+    var en = params && params.entry && EXT.entry ? EXT.entry.norm(params.entry) : null;   // entry rule (#12): applied to a copy of the view, the grid cache stays rule-independent
+    if (en && en.rule !== 'any') view = EXT.entry.filterView(view, en);
     var pr = p.precision;
     var res = {
       verdict: VERDICT.BAD, code: 'NO_ARC', hitRate: 0, reason: '',
@@ -1502,6 +1504,7 @@
       if (!uncapped && mode === 'full') {
         var tf = now();
         var fine = fineStage(p, table, grid, sel, mo, sh, bp, hx && hx.fineOpts(sel, hn));
+        if (en && en.rule !== 'any') fine.view = EXT.entry.filterView(fine.view, en);
         if (hx) fine.sel = hx.fineAim(fine.view, p, mo, sh, bp, hn, sel);
         if (fine.sel) { sel = fine.sel; v = fine.view; }
         fineMs = now() - tf;
@@ -1534,6 +1537,7 @@
     // heading to point the mouth (engine frame, deg CCW from +x): the best arc's yaw, else the line to the CELL
     res.aimHeadingDeg = res.best ? res.best.yawDeg : res.psi0Deg;
     if (hx) res.hood = hx.result(v || view, sel, res, hn, mode, { mo: mo, sh: sh, bp: bp });
+    if (en) res.entry = EXT.entry.result(v || view, sel, p, en);
     res.warnings = warningsFor(p);
     res.timings.coarseMs = coarseMs;
     res.timings.fineMs = fineMs;
