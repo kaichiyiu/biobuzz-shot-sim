@@ -41,10 +41,10 @@
       var x = cen[0] - (d0 + D) * c, y = cen[1] - (d0 + D) * s;
       if (Math.abs(x) > L + 1e-9 || Math.abs(y) > L + 1e-9) return false;
       var at = Object.assign({}, params, { mouth: Object.assign({}, params.mouth, { x: x, y: y }) });
-      var c = E.classifyShot(at, setpoint.thetaDeg, setpoint.v, yaw);
-      if (c.rectHit !== true) return false;
-      if (rule.rule === 'descending') return c.entryAngleDeg < 0;   // same semantics as engine-entry cellOk (NaN fails)
-      if (rule.rule === 'maxSpeed') return c.entrySpeed <= rule.maxSpeedMps;
+      var cl = E.classifyShot(at, setpoint.thetaDeg, setpoint.v, yaw);
+      if (cl.rectHit !== true) return false;
+      if (rule.rule === 'descending') return cl.entryAngleDeg < 0;   // same semantics as engine-entry cellOk (NaN fails)
+      if (rule.rule === 'maxSpeed') return cl.entrySpeed <= rule.maxSpeedMps;
       return true;
     }
 

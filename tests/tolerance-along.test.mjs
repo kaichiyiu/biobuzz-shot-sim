@@ -97,3 +97,20 @@ test('entry rule: descending narrows the along range (subset of any), every prob
   assert.equal(total(none), 0);   // the setpoint itself breaks the rule
   assert.deepEqual(E.alongRange({ ...BASE, entry: { rule: 'any' } }, sp), any);   // rule 'any' = legacy path, unchanged
 });
+
+test('off-axis spots (regression: shadowed ray cosine gave NaN): range > 0 and every probed distance scores with the mouth translated along the shot line', () => {
+  for (const [x, y] of [[40, -20], [-60, -60], [24, -60]]) {
+    const P = { ...BASE, robot: { x, y } }, { r, sp } = setpoint(P), a = E.alongRange(P, sp);
+    assert.ok(a.minusIn + a.plusIn > 0 && Number.isFinite(a.minusIn + a.plusIn), `${x},${y}: ${JSON.stringify(a)}`);
+    const p = I.normParams(P), cen = I.mouthCentroid(p.target, p.hiveState[p.target]);
+    const psi = Math.atan2(cen[1] - p.launch.y, cen[0] - p.launch.x), c = Math.cos(psi), s = Math.sin(psi);
+    assert.ok(Math.abs(psi / (Math.PI / 180) - 90) > 5, 'really slanted');
+    const at = (D) => E.classifyShot({ ...P, robot: undefined, mouth: { x: p.launch.x - D * c, y: p.launch.y - D * s } }, sp.thetaDeg, sp.v, psi / (Math.PI / 180) + sp.yawOffsetDeg);
+    assert.ok(at(0).rectHit === true, `${x},${y}: setpoint scores`);
+    let n = 0;
+    for (let D = -a.minusIn; D <= a.plusIn + 1e-9; D += 0.25) { n++; assert.ok(at(D).rectHit === true, `${x},${y}: D ${D}`); }
+    assert.ok(n >= 1);
+    if (a.plusEnd === 'fail') assert.ok(!at(a.plusIn + 0.25 + 1e-6).rectHit, `${x},${y}: plus edge`);
+    if (a.minusEnd === 'fail') assert.ok(!at(-(a.minusIn + 0.25 + 1e-6)).rectHit, `${x},${y}: minus edge`);
+  }
+});
