@@ -3,8 +3,9 @@
  * +- tolerances, that scores everywhere inside (bounded errors, no distribution; PLAN 2.5, D9, D11). Maths: process_docs/issue-7/design.md.
  *
  * ToleranceInput = { yawDeg, angleDeg, rpm, posIn (all >= 0), source: 'measured' | 'preset', best, burstShots (2..20; key absent otherwise), burstIntervalS (optional) }
- *   burstShots > 1 (#9, needs engine-burst.js): bias.speedPct = the largest per-shot deficit of E.burstPlan; the speed axis' low side is widened by
- *   ln(1 / (1 - speedPct/100)) per unit s (rates / kB only; the core is untouched) and res.tolerance.bias = { speedPct, shots, intervalS, control, perShotPct }.
+ *   burstShots > 1 (#9, needs engine-burst.js): bias.speedPct = the largest per-shot deficit of E.burstPlan; it is a FIXED offset (not scaled by s): the
+ *   rect-hit grid is eroded along the speed axis by B = ceil(ln(1/(1 - speedPct/100)) / lnStep) cells (a cell stays a hit only if it and the B cells below hit;
+ *   cells below the view = not hit) before the box search (the core is untouched); res.tolerance.bias = { speedPct, shots, intervalS, control, perShotPct, cells: B }.
  * norm(raw) -> ToleranceInput | null          junk -> 0 per field; all four 0 -> null. best = false switches the bestSetpoint search off.
  * verdictOf(margin, bands = BANDS) -> E.VERDICTS string   margin >= ok POSSIBLE, >= mid NOT CONSISTENT, else WON'T WORK (null -> WON'T WORK)
  * result(view, sel, res, tn, { p, mo, sh, bp }) -> ToleranceResult | null (null when tn is null)
@@ -45,13 +46,12 @@
   }
 
   // index units per s = 1: angle and yaw are the same for every cell, the speed pair depends on the cell's motor rpm
-  function rates(view, tn, distIn, rpmC, vC, biasPct) {
-    var bias = biasPct > 0 ? -Math.log(1 - Math.min(biasPct, 99.9) / 100) / view.lnStep : 0;   // burst deficit: a fixed shift down the speed axis
+  function rates(view, tn, distIn, rpmC, vC) {
     var wY = tn.yawDeg + Math.atan(tn.posIn / Math.max(distIn || 0, 1e-9)) / RAD;
     return { wY: wY, kA: tn.angleDeg / view.thStep, kY: wY / view.yawStep, kB: function (b) {
       var x = tn.rpm / (rpmC * view.speeds[b] / vC);
-      if (!(x > 0)) return [Math.min(bias, b + 1), 0];
-      return [Math.min((x >= 1 ? b + 1 : -Math.log(1 - x) / view.lnStep) + bias, b + 1), Math.log(1 + x) / view.lnStep];
+      if (!(x > 0)) return [0, 0];
+      return [Math.min(x >= 1 ? b + 1 : -Math.log(1 - x) / view.lnStep, b + 1), Math.log(1 + x) / view.lnStep];
     } };
   }
 
@@ -67,6 +67,15 @@
     var W = I.ext('window'), pr = p.precision;
     var n = W && W.nearestRectHit(view, { a: sel.a, b: sel.b, c: sel.c, cellMaxB: top }, { theta: pr.sigThetaDeg, ln: Math.max(1e-9, sel.sigV || 0), yaw: pr.sigYawDeg });
     return n ? { cell: [n.a, n.b, n.c], theta: view.thetas[n.a], v: view.speeds[n.b], yaw: view.yaws[n.c], moved: true } : null;
+  }
+
+  // burst: a cell stays 1 only if it and the B cells below it on the speed axis (b ascending = faster) are 1 (below the view = unknown -> 0): a fixed, unscaled shift of the low side
+  function erodeLow(H, dims, B) {
+    var nA = dims[0], nB = dims[1], nC = dims[2], out = new Uint8Array(H.length), a, b, c, i, run;
+    for (a = 0; a < nA; a++) for (c = 0; c < nC; c++) {
+      for (run = 0, b = 0; b < nB; b++) { i = (a * nB + b) * nC + c; run = H[i] ? run + 1 : 0; out[i] = run > B ? 1 : 0; }
+    }
+    return out;
   }
 
   function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
@@ -155,10 +164,14 @@
     var sp = sel && res.best && view && view.rectHits && mc ? setpointOf(view, sel, deps.p) : null;
     if (sel && res.best && view && view.rectHits && mc && !sp) out.margin = out.boxMargin = 0;   // no rect-hit cell at all
     if (sp) {
-      var dims = [view.nA, view.nB, view.nC], S = TC.summedVolume(view.rectHits, dims), yo = wrap180(sp.yaw - res.psi0Deg);
+      var dims = [view.nA, view.nB, view.nC], yo = wrap180(sp.yaw - res.psi0Deg);
       var rpmC = I.motorCore(deps.mo, deps.sh, deps.bp, sp.v).motorRpm, bias = tn.burstShots > 1 ? biasOf(res, tn) : null;
-      var K = rates(view, tn, res.distIn, rpmC, sp.v, bias ? bias.speedPct : 0), bx = boxAt(view, S, K, sp.cell, SMAX);
-      if (bias) out.bias = bias;
+      if (bias) {
+        bias.cells = bias.speedPct > 0 ? Math.ceil(-Math.log(1 - Math.min(bias.speedPct, 99.9) / 100) / view.lnStep) : 0;
+        if (bias.cells > 0) view = Object.assign({}, view, { rectHits: erodeLow(view.rectHits, dims, bias.cells) });   // one grid for S, the box and bestSetpoint
+        out.bias = bias;
+      }
+      var S = TC.summedVolume(view.rectHits, dims), K = rates(view, tn, res.distIn, rpmC, sp.v), bx = boxAt(view, S, K, sp.cell, SMAX);
       var al = alongOf(deps, tn, sp.theta, sp.v, yo), alongMargin = al ? al.margin : null, useAlong = alongMargin != null && alongMargin < bx.s;
       out.boxMargin = bx.s; out.alongMargin = alongMargin; out.margin = Math.min(bx.s, alongMargin == null ? Infinity : alongMargin, SMAX);
       out.capped = out.margin >= SMAX; out.resolution = bx.resolution; out.viewLimited = bx.viewLimited; out.along = al;
