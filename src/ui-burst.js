@@ -6,7 +6,7 @@
   'use strict';
   var MAX = 5, DEFAULT = { shots: 3, include: false };
   var NOTE = 'Only matters when a tolerance is set (the ± fields above): the margin then also covers the speed the flywheel has lost by the later shots.';
-  var HELP = 'Each bar is the motor speed when that shot leaves, against the scoring window (shaded). Shot 1 is at your setpoint, the middle of the window.';
+  var HELP = 'Each bar is the motor speed when that shot leaves, against the scoring window (shaded). Shot 1 is at your setpoint, the middle of the window. The interval is the shot interval set in Robot config. The window and setpoint use the single-η model: after a per-rpm calibration the export table\'s rpm may differ slightly.';
 
   function norm(raw) {
     var s = Math.round(Number(raw && raw.shots));
