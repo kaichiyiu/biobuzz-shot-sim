@@ -42,6 +42,9 @@ const UI = [
   'tests/worker-margin.test.mjs', 'tests/margin-runner.test.mjs', 'tests/ui-margin-map.test.mjs',
   // burst fire (issue #9, K3)
   'src/ui-burst.js', 'tests/ui-burst.test.mjs',
+  // custom flywheel / motor (issue #5, L1-L5)
+  'src/flywheel-custom.js', 'src/motor-custom.js', 'src/ui-flywheel.js',
+  'tests/flywheel-custom.test.mjs', 'tests/motor-custom.test.mjs', 'tests/ui-flywheel.test.mjs', 'tests/worker-custom.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));
