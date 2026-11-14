@@ -140,3 +140,12 @@ test('pdflatex (when installed): the dual-wheel and the dual + applied-calibrati
     assert.equal(r.status, 0, name + ': ' + (r.stdout || '').split('\n').filter((l) => l.startsWith('!')).join(' | '));
   }
 });
+
+test('F2: the motor line shows the custom motor when cfg.ext.flywheelCustom.motor is on (and valid); otherwise the picker id', () => {
+  const { c } = CASES[0][1], ext = (motor) => ({ ...CFG, ext: { flywheelCustom: { wheel: { on: false }, motor } } });
+  const on = T.renderTex(c, ext({ on: true, freeRpm: 3000, stallTorqueNm: 1.2, encoderPPR: 20 }), tpl, { wheelDiameterMm: 96 });
+  assert.match(on, /Motor & \\texttt\{ custom \(3000 rpm, 1\.2 N\.m\) \}/); assert.ok(!/yj6000/.test(on));
+  for (const m of [{ on: false, freeRpm: 3000, stallTorqueNm: 1.2 }, { on: true, freeRpm: 'x', stallTorqueNm: 1.2 }, { on: true, freeRpm: 3000, stallTorqueNm: 99 }])
+    assert.match(T.renderTex(c, ext(m), tpl, { wheelDiameterMm: 96 }), /Motor & \\texttt\{ yj6000 \}/);
+  assert.match(T.renderTex(c, CFG, tpl, { wheelDiameterMm: 96 }), /Motor & \\texttt\{ yj6000 \}/);
+});

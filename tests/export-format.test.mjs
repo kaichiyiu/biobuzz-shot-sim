@@ -127,3 +127,14 @@ test('no verdict in any export (owner decision 2026-11-11): no CSV column, no wo
   assert.ok(rows.every((r) => r.verdict), 'input rows are not mutated');
   assert.doesNotMatch(F.toJavaArrays(t), /verdict|POSSIBLE|WON'T WORK/i);
 });
+
+test('F2: header notes name the custom motor when cfg.ext.flywheelCustom.motor is on and valid; no such note otherwise', () => {
+  const cfg = (motor) => ({ v: 1, robot: { motorId: 'yj6000' }, ext: { flywheelCustom: { motor } } });
+  const has = (h) => h.notes.filter((n) => n.startsWith('Motor: custom'));
+  const on = F.header(cfg({ on: true, freeRpm: 3000, stallTorqueNm: 1.2, encoderPPR: 20 }), null, ROWS);
+  assert.equal(has(on).length, 1); assert.ok(has(on)[0].includes('custom (3000 rpm, 1.2 N·m)'));
+  assert.ok(F.toCsv({ header: on, rows: ROWS }).includes('Motor: custom (3000 rpm, 1.2 N·m)'));
+  assert.equal(has(F.header(cfg({ on: false, freeRpm: 3000, stallTorqueNm: 1.2 }), null, ROWS)).length, 0);
+  assert.equal(has(F.header(cfg({ on: true, freeRpm: 1, stallTorqueNm: 1.2 }), null, ROWS)).length, 0);
+  assert.equal(has(F.header({ v: 1, robot: { motorId: 'yj6000' } }, null, ROWS)).length, 0);
+});
