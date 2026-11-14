@@ -46,6 +46,7 @@ test('constructs: \\frac, scripts, sqrt, symbols, text, operators', () => {
   assert.match(D.html('x_1^2', { math: true }), /<i>x<\/i><sub>1<\/sub><sup>2<\/sup>/);
   assert.equal(D.plain('\\lceil s \\cdot k \\rceil \\le \\sqrt{2} \\approx 1.41', { math: true }).replace(/\s/g, ''), '⌈s·k⌉≤√(2)≈1.41');
   assert.equal(D.plain('$\\ln(1 - d)$ and \\emph{up} \\textbf{b} \\texttt{t}; a -- b'), 'ln (1−d) and up b t; a – b'.replace('ln (', 'ln ('));
+  assert.equal(D.plain('x_{k+1}', { math: true }), 'x_(k+1)'); assert.equal(D.plain('\\frac{1+k}{2}', { math: true }), '(1+k)/2');
   assert.equal(D.plain('\\max_\\psi \\left( x \\right)\\big|', { math: true }), 'max _ψ(x)|');
 });
 

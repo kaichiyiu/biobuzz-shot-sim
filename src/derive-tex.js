@@ -19,7 +19,7 @@
   var ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return ESC[c]; }); };
   var wrap = function (cls, a) { return '<span class="' + cls + '">' + a + '</span>'; };
-  var single = function (a) { return /^[^\s()]{1,3}$/.test(a); };
+  var single = function (a) { return /^[^\s()+\-−=<>*\/^_,;]{1,3}$/.test(a); };
   var HTML = {   // emitters: ch(text, italic), and wrappers
     ch: function (s, it, rel) { return it ? '<i>' + esc(s) + '</i>' : rel ? '\u2005' + esc(s) + '\u2005' : esc(s); }, frac: function (a, b) { return wrap('dv-frac', wrap('dv-n', a) + wrap('dv-d', b)); },
     sqrt: function (a) { return wrap('dv-sqrt', '√' + wrap('dv-rad', a)); }, sup: function (a) { return '<sup>' + a + '</sup>'; }, sub: function (a) { return '<sub>' + a + '</sub>'; },
