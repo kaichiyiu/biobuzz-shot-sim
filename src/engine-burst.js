@@ -3,7 +3,7 @@
  * E.burstPlan(result, params, { shots, intervalS?, setpointRpm? }) -> BurstPlan | null
  *   BurstPlan = { shots, intervalS, control: 'pid'|'power', steadyDeficitPct, perShot: [{ k, deficitPct, motorRpm, inWindow }], allIn, firstOut (k | null),
  *                 minIntervalS (null = not even 60 s keeps every shot in the window), setpointRpm, windowRpm: [lo, hi], dipPct, tauS }
- *   Reads result.motor (motorCore: dip, tauS, details.w0 / wFree / shotInterval) and the motor-rpm window of the result (hood.rpmWindow, else
+ *   Reads result.motor (motorCore: dip (dual: dipExit, the exit-speed dip of both wheels, issue M2), tauS, details.w0 / wFree / shotInterval) and the motor-rpm window of the result (hood.rpmWindow, else
  *   best.scoringWindow, as engine-export.js). Setpoint = the window centre (what the export table gives the robot). null: no result / window /
  *   reachable aim, shots < 1, or a setpoint above the motor's usable free speed.
  *   Per shot the wheel keeps (1 - dip) of its speed (shot energy ~ w^2); then it recovers for the interval:
@@ -44,7 +44,7 @@
     shots = Math.min(shots, MAX_SHOTS);
     var d = m.details, sp = fin(opts.setpointRpm) && opts.setpointRpm > 0 ? opts.setpointRpm : (res.hood && res.hood.rpmWindow ? res.hood.rpmWindow.centerMotorRpm : (win[0] + win[1]) / 2);
     if (!fin(sp) || !(sp > 0) || sp >= m.usableFreeRpm) return null;
-    var w0 = d.w0 * sp / m.motorRpm, r = d.wFree / w0, pid = m.control === 'pid', dip = m.dip, tau = m.tauS;
+    var w0 = d.w0 * sp / m.motorRpm, r = d.wFree / w0, pid = m.control === 'pid', dip = m.dipExit != null ? m.dipExit : m.dip, tau = m.tauS;   // dual wheels (M2): the next ball leaves at V_B + V_T, so the exit-speed dip
     var dt = fin(opts.intervalS) && opts.intervalS >= 0 ? Math.min(opts.intervalS, MAX_INTERVAL_S) : d.shotInterval;
     function inWin(x) { return sp * x >= win[0] * (1 - EPS) && sp * x <= win[1] * (1 + EPS); }
     function allIn(t) { return fractions(shots, dip, tau, r, pid, t).every(inWin); }
