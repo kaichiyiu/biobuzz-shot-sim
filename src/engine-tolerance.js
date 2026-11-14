@@ -13,7 +13,7 @@
  * result(view, sel, res, tn, { p, mo, sh, bp }) -> ToleranceResult | null (null when tn is null)
  *   { margin, boxMargin, alongMargin, limitingAxis: 'yaw'|'angle'|'rpm'|'along'|null, limitingSide: -1|1|null, lowerBound, capped, sMax,
  *     perAxis: { yaw, angle, rpm }, position: { lateralIn (sideways move the aim window absorbs: perAxis.yaw x the position tolerance's yaw share; null without posIn), alongIn: [-minusIn, plusIn] | null }, verdict, bands, cappedBy: null|'unreachable'|'headroom',
- *     resolution, basis: 'rect', entryRule, mode: 'full'|'coarse', viewLimited, tolerance, setpoint, along, bestSetpoint }
+ *     resolution, grid: { thStep, lnStep, yawStep (deg, ln, deg), kA, kY (index units per s = 1), wY (yaw + position equivalent, deg) } with a setpoint, basis: 'rect', entryRule, mode: 'full'|'coarse', viewLimited, tolerance, setpoint, along, bestSetpoint }
  *   margin null = no aim, or the aim needs more speed than the motor has (cappedBy 'unreachable'; boxMargin / alongMargin then describe the uncapped aim).
  *   margin 1.0 = just fits; >= sMax (4) is reported as 4 with capped = true; lowerBound = the binding term only bounds the margin from below
  *   (box ran into the view edge / along range stopped at the mouth limit or the cap). (verdict WON'T WORK).
@@ -175,6 +175,7 @@
       out.boxMargin = bx.s; out.alongMargin = alongMargin; out.margin = Math.min(bx.s, alongMargin == null ? Infinity : alongMargin, SMAX);
       out.capped = out.margin >= SMAX; out.resolution = bx.resolution; out.viewLimited = bx.viewLimited; out.along = al;
       out.perAxis = { yaw: bx.perAxis[2], angle: bx.perAxis[0], rpm: bx.perAxis[1] };
+      out.grid = { thStep: view.thStep, lnStep: view.lnStep, yawStep: view.yawStep, kA: K.kA, kY: K.kY, wY: K.wY };   // grid steps and index rates the margin used (Show the derivation)
       if (!out.capped) {
         if (useAlong) { out.limitingAxis = 'along'; out.limitingSide = al.minusIn <= al.plusIn ? -1 : 1; out.lowerBound = (al.minusIn <= al.plusIn ? al.minusEnd : al.plusEnd) !== 'fail'; }
         else { out.limitingAxis = bx.limitingAxis == null ? null : AXES[bx.limitingAxis]; out.limitingSide = bx.limitingSide; out.lowerBound = bx.viewLimited; }
