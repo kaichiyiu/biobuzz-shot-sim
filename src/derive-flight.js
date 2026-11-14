@@ -2,7 +2,7 @@
    Browser: window.DeriveFlight. Node: module.exports.
    render(template, p, E, cfg?, libs?) -> Section[]   fills the template with ExportSolver.constantsFrom(p, [], E) + ExportTex.renderTex (no export rows: only the aim table, rpm map and ticks print n/a, they are not used here),
      takes the Geometry, Flight model and RK4 sections and turns them into blocks with DeriveTex.blocks. Section = { id, title, lead: '', rows: [], notes: [], blocks: [{ kind: 'p' | 'eq', tex }] }.
-   sections(p, ctx) -> Section[]   ctx = { E, cfg? }; template = window.SHOT_TEMPLATES['derivation.tex']. [] when the template, ExportTex or ExportSolver is absent or the fill fails (never throws). */
+   sections(p, ctx) -> Section[]   ctx = { E, cfg?, template? }; template = ctx.template, else window.SHOT_TEMPLATES['derivation.tex']. [] when the template, ExportTex or ExportSolver is absent or the fill fails (never throws). */
 (function (root, factory) {
   var node = typeof require === 'function' && typeof module === 'object';
   var api = factory(root, node ? require('./derive-tex.js') : root.DeriveTex, node ? { S: require('./export-solver.js'), X: require('./export-tex.js') } : { S: root.ExportSolver, X: root.ExportTex });
@@ -36,7 +36,7 @@
   }
 
   function sections(p, ctx) {
-    var T = root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['derivation.tex'];
+    var T = ctx && ctx.template || root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['derivation.tex'];
     return render(T, p, ctx && ctx.E || root.ShotEngine, ctx && ctx.cfg, null);
   }
 
