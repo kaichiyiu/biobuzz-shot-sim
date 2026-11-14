@@ -11,6 +11,9 @@ const ENGINE = [
   'src/engine-rect.js', 'src/engine-hood-core.js', 'src/engine-hood.js', 'src/engine-sweep.js', 'src/engine-entry.js',
   'tests/rect-window.test.mjs', 'tests/hood-core.test.mjs', 'tests/hood.test.mjs', 'tests/hood-aim.test.mjs', 'tests/hood-search.test.mjs', 'tests/backcompat.test.mjs', 'tests/file-size.test.mjs',
   'tests/fixtures/make-baseline.mjs',
+  // dual-wheel impulse-momentum split (issue M2, N2)
+  'src/dual-split.js', 'tests/dual-split.test.mjs', 'tests/dual-motor.test.mjs', 'tests/burst-dual.test.mjs', 'tests/motor-singles.test.mjs', 'tests/oracle-motor.test.mjs',
+  'tests/fixtures/make-baseline-dual.mjs', 'tests/crosscheck/compare-motor.mjs', 'tests/crosscheck/oracle_motor.py',
   // tolerance model (issue #7 / #8, I1-I4) and robot footprint (J1)
   'src/engine-tolerance-core.js', 'src/engine-tolerance-along.js', 'src/engine-tolerance.js', 'src/engine-tolerance-burst.js', 'src/footprint.js', 'src/engine-burst.js', 'tests/burst.test.mjs', 'tests/tolerance-bias.test.mjs', 'tests/tolerance-burst-setpoint.test.mjs',
   'tests/tolerance-core.test.mjs', 'tests/tolerance-along.test.mjs', 'tests/tolerance.test.mjs', 'tests/tolerance-evaluate.test.mjs', 'tests/footprint.test.mjs',
@@ -45,6 +48,10 @@ const UI = [
   // custom flywheel / motor (issue #5, L1-L5)
   'src/flywheel-custom.js', 'src/motor-custom.js', 'src/ui-flywheel.js',
   'tests/flywheel-custom.test.mjs', 'tests/motor-custom.test.mjs', 'tests/ui-flywheel.test.mjs', 'tests/worker-custom.test.mjs',
+  // Show the derivation (issue #6, O0-O9)
+  'src/derive-tex.js', 'src/derive-window.js', 'src/derive-hood.js', 'src/derive-margin.js', 'src/derive-burst.js', 'src/derive-flight.js', 'src/ui-derive.js', 'src/derive-latex.js',
+  'tests/derive-tex.test.mjs', 'tests/derive-window.test.mjs', 'tests/derive-hood.test.mjs', 'tests/derive-margin.test.mjs', 'tests/derive-burst.test.mjs', 'tests/derive-flight.test.mjs',
+  'tests/ui-derive.test.mjs', 'tests/derive-latex.test.mjs', 'tests/tolerance-grid.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));

@@ -1247,6 +1247,7 @@
       note(s0, 'Turn on the verdict map to find spots where an arc exists.');
     } else {
       var v = b.v, dual = dt.type === 'dual';
+      var ds = dual && dt.splitModel === 'impulse' && window.ShotDualSplit, dsFmt = { f: f, pct: pct, sci: sci, ms: ms };   // dual-wheel impulse split (issue M2)
 
       var s1 = sec('1 · Exit speed → wheel rpm → motor rpm', ['The shot needs the ball to leave at ', { b: fmtSpeed(v) + (U.speedUnit() === 'm/s' ? '' : ' (' + f(v, 2) + ' m/s)') }, '. The formulas below work in SI units (m/s, m, kg). The wheel has to spin faster than that, because the ball only picks up part of the wheel surface speed.']);
       if (dual) {
@@ -1276,18 +1277,21 @@
       var s3 = sec('3 · Flywheel: speed lost per shot and recovery', ['Each ball takes energy out of the spinning wheel. How much speed that costs depends on the flywheel inertia; how fast it comes back depends on motor torque and on ', { b: pid ? 'PID driving it at full power' : 'fixed power letting it creep back' }, '.']);
       eq(s3, 'Flywheel inertia', 'I = wheels × I_wheel + steel flywheel + hubs', fi.text, sci(dt.inertiaKgM2) + ' kg·m²');
       eq(s3, 'Ball energy', 'E_ball = ½ m v² + ½ I_ball ω²,  ω = S × v ÷ r', '½ × ' + f(bp.massKg, 4) + ' kg × ' + f(v, 2) + '² + spin at S ' + f(m.S0, 2) + ' (ω ' + f(dt.spinRadS, 0) + ' rad/s)', f(dt.keLinJ, 3) + ' + ' + f(dt.keRotJ, 3) + ' J');
-      eq(s3, 'Energy drawn from the wheel', dual ? 'E = 2 × E_ball ÷ (1 + k)  (bottom wheel share)' : 'E = 2 × E_ball  (slip wastes about as much as the ball gets)', '2 × ' + f(dt.keLinJ + dt.keRotJ, 3) + (dual ? ' × ' + f(dt.share, 2) : ''), f(m.shotEnergyJ, 3) + ' J');
+      eq(s3, 'Energy drawn from the wheel', dual ? (ds ? 'E_B = s_B × 2 E_ball  (bottom wheel share s_B of the impulse split, below)' : 'E = 2 × E_ball ÷ (1 + k)  (bottom wheel share)') : 'E = 2 × E_ball  (slip wastes about as much as the ball gets)', '2 × ' + f(dt.keLinJ + dt.keRotJ, 3) + (dual ? ' × ' + f(dt.share, 2) : ''), f(m.shotEnergyJ, 3) + ' J');
       eq(s3, 'Wheel speed before the shot', 'ω₀ = n_wheel × 2π ÷ 60', f(m.wheelRpm, 0) + ' × 2π ÷ 60', f(dt.w0, 1) + ' rad/s');
       eq(s3, 'Right after the shot', 'ω₁ = √(ω₀² − 2E ÷ I)', '√(' + f(dt.w0, 1) + '² − 2 × ' + f(m.shotEnergyJ, 3) + ' ÷ ' + sci(dt.inertiaKgM2) + ')', f(dt.w1, 1) + ' rad/s');
-      eq(s3, 'Speed dip', 'dip = 1 − ω₁ ÷ ω₀', '1 − ' + f(dt.w1, 1) + ' ÷ ' + f(dt.w0, 1), pct(m.dip, 2));
+      eq(s3, ds ? 'Speed dip, bottom wheel' : 'Speed dip', 'dip = 1 − ω₁ ÷ ω₀', '1 − ' + f(dt.w1, 1) + ' ÷ ' + f(dt.w0, 1), pct(m.dip, 2));
+      if (ds) ds.rows(m, dt, dsFmt).forEach(function (r) { eq(s3, r.what, r.formula, r.numbers, r.result); });
       eq(s3, 'Stall torque at the wheel', 'T = motors × T_stall × (V ÷ 12) ÷ G', f(dt.motorsPerWheel, 0) + ' × ' + f(dt.stallTorqueListedNm, 4) + ' N·m × (' + f(sh.batteryV, 1) + ' ÷ 12) ÷ ' + f(dt.gear, 2), f(dt.wheelStallTorqueNm, 4) + ' N·m');
       eq(s3, 'Time constant', 'τ = I × ω_free ÷ T', sci(dt.inertiaKgM2) + ' × ' + f(dt.wFree, 1) + ' ÷ ' + f(dt.wheelStallTorqueNm, 4), f(m.tauS, 3) + ' s');
-      if (pid) {
+      if (ds) {
+        ds.recoveryRows(m, dt, dsFmt).forEach(function (r) { eq(s3, r.what, r.formula, r.numbers, r.result); });
+      } else if (pid) {
         eq(s3, 'Back to speed (full power)', 't = τ × ln((ω_free − ω₁) ÷ (ω_free − ω₀))', f(m.tauS, 3) + ' × ln((' + f(dt.wFree, 1) + ' − ' + f(dt.w1, 1) + ') ÷ (' + f(dt.wFree, 1) + ' − ' + f(dt.w0, 1) + '))', ms(m.recoveryMs));
       } else {
         eq(s3, 'Back within 1% (no boost)', 't = τ × ln(dip ÷ 1%)', f(m.tauS, 3) + ' × ln(' + pct(m.dip, 2) + ' ÷ 1%)', ms(m.recoveryMs));
       }
-      eq(s3, 'Still missing at the next shot', pid ? 'ω(Δt) = ω_free − (ω_free − ω₁)·e^(−Δt/τ), capped at ω₀' : 'leftover = dip × e^(−Δt/τ)', 'Δt = ' + f(dt.shotInterval, 2) + ' s', pct(m.residual, 2));
+      if (!ds) eq(s3, 'Still missing at the next shot', pid ? 'ω(Δt) = ω_free − (ω_free − ω₁)·e^(−Δt/τ), capped at ω₀' : 'leftover = dip × e^(−Δt/τ)', 'Δt = ' + f(dt.shotInterval, 2) + ' s', pct(m.residual, 2));
       eq(s3, 'Speed scatter from recovery', 'σ_recovery = leftover ÷ 2', pct(m.residual, 2) + ' ÷ 2', '±' + pct(m.sigmaRecovery, 2));
 
       var s4 = sec('4 · What changing the wheel changes', ['A wheel changes two numbers here. ', { b: 'Diameter' }, ' sets how many rpm the same surface speed takes (bigger wheel = fewer rpm = more headroom). ', { b: 'Mass' }, ' sets the flywheel inertia (heavier = smaller dip per shot, but slower spin-up and slower recovery). Grip and softness are not modeled per wheel; the exit-efficiency slider covers them. Same motor, gearing, ' + fi.n + ' wheel' + (fi.n > 1 ? 's' : '') + ' per shaft and extra flywheel as now:']);

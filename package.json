@@ -9,6 +9,7 @@
     "test": "node --test tests/engine.test.mjs tests/units-mouth.test.mjs tests/file-size.test.mjs tests/rect-window.test.mjs tests/hood-core.test.mjs tests/hood.test.mjs tests/hood-aim.test.mjs tests/backcompat.test.mjs tests/ui-hood.test.mjs tests/units-range.test.mjs tests/ui-window.test.mjs",
     "crosscheck": "node tests/crosscheck/compare.mjs",
     "crosscheck:ext": "node tests/crosscheck/compare-ext.mjs",
+    "crosscheck:motor": "node tests/crosscheck/compare-motor.mjs",
     "test:all": "node --test tests/*.test.mjs",
     "oracle:selftest": "python tests/crosscheck/oracle.py --selftest"
   }

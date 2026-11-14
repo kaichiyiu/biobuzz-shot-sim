@@ -2,6 +2,7 @@
 //   node tests/smoke/app.smoke.mjs <built.html> --capture out.json   record verdict/hitRate at 3 spots (pre-change build)
 //   node tests/smoke/app.smoke.mjs <built.html> [--compare out.json] [--shot out.png]
 //     checks: legacy values match the capture, hook bus (onStart/extendParams/onResult/onChange/onMathRender), throwing hook
+//     derivation (Show the derivation, issue #6): default / fixed hood / tolerance / burst / custom motor, with and without the worker
 // Needs `playwright` resolvable (set NODE_PATH to its node_modules if required). Never touches the CDN (requests are aborted).
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -17,16 +18,17 @@ const SPOTS = [['72', '24'], ['40', '60'], ['100', '36']];   // display-frame in
 let failed = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) failed++; };
 
-async function open(browser, init) {
+async function open(browser, init, url) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await ctx.route(/^https?:/, (r) => r.abort());
   if (init) await ctx.addInitScript(init);
   const page = await ctx.newPage(), logs = [], errors = [];
   page.on('console', (m) => logs.push(m.type() + ': ' + m.text()));
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(URL_);
+  const reqs = []; page.on('request', (q) => { if (/^https?:/.test(q.url())) reqs.push(q.url()); });
+  await page.goto(url || URL_);
   await settle(page);
-  return { page, logs, errors };
+  return { page, logs, errors, reqs };
 }
 // wait until a full result is applied and the engine is idle
 async function settle(page) {
@@ -105,6 +107,64 @@ try {
     check(await h.page.evaluate(() => document.getElementById('mathBody').children.length > 0), 'math body still rendered despite throwing hook');
     check(h.logs.some((l) => l.startsWith('warning') && l.includes('smoke-bad')), 'throwing hook logged via console.warn');
     check(h.errors.length === 0, 'no uncaught page errors with throwing hook: ' + h.errors.join('|'));
+  }
+  // (4) Show the derivation (#6): the block renders in the math dialog, numbers equal the result, no raw TeX / NaN / verdict words, no network use of its own
+  if (!opt('--capture')) for (const url of [URL_, URL_.replace('?noworker', '')]) {
+      const tag = url === URL_ ? '[noworker] ' : '[worker] ', d = await open(browser, null, url);
+      const n0 = d.reqs.length, nn = (x, k) => x.toFixed(k), BAD = /POSSIBLE|NOT CONSISTENT|WON.T WORK|verdict|hit rate|NaN|undefined|[\\$]/i;
+      const look = async (setup) => {
+        if (setup) { await d.page.evaluate(() => document.querySelectorAll('details:not(.derive)').forEach((x) => { x.open = true; })); await d.page.evaluate(() => { window.__prev = window.__shotSim.current; }); await setup(d.page);
+          await d.page.waitForFunction(() => window.__shotSim.current !== window.__prev && window.__shotSim.current.mode === 'full', null, { timeout: 8000 }).catch(() => null); await d.page.waitForTimeout(1500); }
+        await settle(d.page);
+        await d.page.click('#mathBtn');
+        if (!(await d.page.waitForSelector('#mathBody details.derive', { timeout: 4000 }).catch(() => null))) { await d.page.keyboard.press('Escape'); return null; }
+        await settle(d.page); await d.page.waitForTimeout(500);   // an open dialog re-renders on every full result: read after the last one
+        const o = await d.page.evaluate(() => {
+          const det = document.querySelector('#mathBody details.derive'), open0 = det.open, c = window.__shotSim.current, sw = c.best && c.best.scoringWindow, t = c.tolerance, h = c.hood;
+          det.querySelector('summary').click();
+          return { open0, open1: det.open, ids: [...det.querySelectorAll('section.dv-sec')].map((x) => x.id.slice(3)), text: det.innerText, html: det.innerHTML, panel: document.body.innerText.replace(det.innerText, ''),
+            sw, h: h && { angleDeg: h.angleDeg, rpmWindow: h.rpmWindow }, motor: c.motor ? { motorRpm: c.motor.motorRpm, motorId: c.motor.motorId, vExit: c.motor.vExit } : null, dist: c.distIn, mode: c.mode,
+            t: t && { boxMargin: t.boxMargin, margin: t.margin, grid: t.grid, bias: t.bias, setpoint: t.setpoint } };
+        });
+        await d.page.keyboard.press('Escape'); await d.page.waitForTimeout(150);
+        return o;
+      };
+      const base = (o, label) => { if (!o) { check(false, tag + label + ': no derivation block'); return; } check(o.open0 === false && o.open1 === true, tag + label + ': block closed by default, opens on click'); check(!BAD.test(o.text), tag + label + ': no verdict words / NaN / undefined / raw TeX'); check(!/<script/i.test(o.html) && /dv-frac/.test(o.html), tag + label + ': markup safe, fractions rendered'); };
+      let o = await look();
+      base(o, 'default'); check(['flight-geometry', 'flight-model', 'flight-rk4', 'window', 'eta'].every((x) => o.ids.includes(x)), tag + 'default: sections ' + o.ids);
+      check(o.text.includes(nn(o.sw.thetaDeg[0], 2)) && o.text.includes(nn(o.sw.v[1], 3)) && o.text.includes(nn(o.motor.motorRpm, 1)), tag + 'default: window / rpm numbers equal the result');
+      check(o.panel.includes(Math.round(o.h ? o.h.rpmWindow.centerMotorRpm : o.motor.motorRpm).toLocaleString('en-US')), tag + 'default: setpoint rpm also shown in the panel');
+      const mx0 = o.sw.thetaDeg[0];
+      o = await look(async (pg) => { await pg.click('#hoodHost button[data-v="fixed"]'); await pg.fill('#hoodAngle', '68'); });
+      base(o, 'fixed hood'); check(o.ids.includes('hood') && /Launch angle/.test(o.text) && !/Chosen angle/.test(o.text) && o.text.includes(nn(o.h.angleDeg, 2) + '°'), tag + 'fixed hood: angle row, no search rows');
+      o = await look(async (pg) => { await pg.fill('#tolYaw', '0.3'); await pg.fill('#tolAngle', '0.3'); await pg.fill('#tolRpm', '15'); await pg.fill('#tolPos', '1'); });
+      base(o, 'tolerance'); check(o.ids.includes('margin') && !o.ids.includes('burst'), tag + 'tolerance: margin section ' + o.ids);
+      check(o.t && [nn(o.t.boxMargin, 3), nn(o.t.grid.kA, 3), nn(o.t.grid.kY, 3), nn(o.t.setpoint.motorRpm, 1), nn(o.dist, 2)].every((x) => o.text.includes(x)), tag + 'tolerance: margin, rates, setpoint rpm and distance equal the result');
+      o = await look(async (pg) => { await pg.click('.seg[data-key="control"] button[data-v="power"]'); await pg.evaluate(() => { const e = document.getElementById('interval'); e.value = '1'; e.dispatchEvent(new Event('input', { bubbles: true })); }); await pg.click('#burst button[data-n="3"]'); await pg.check('#burstInclude'); });
+      base(o, 'burst'); check(o.ids.includes('burst') && o.t && o.t.bias && o.text.includes(o.t.bias.cells + ' cells on the low-speed side'), tag + 'burst: section with B = ' + (o.t && o.t.bias && o.t.bias.cells) + ' (power, 1 s)'); check(o.t.bias.cells > 0 && /Burst-aware setpoint|No speed cell/.test(o.text), tag + 'burst: erosion cells and the burst-aware setpoint (or the no-fit note)');
+      o = await look(async (pg) => { await pg.check('#fcMotorOn'); await pg.fill('#fcFree', '5000'); await pg.fill('#fcStall', '0.2'); await pg.dispatchEvent('#fcStall', 'change'); });
+      base(o, 'custom motor'); check(o.motor.motorId === 'custom' && o.ids.includes('eta') && o.text.includes(nn(o.motor.motorRpm, 1)), tag + 'custom motor: rpm section equals the result (' + o.motor.motorId + ', ' + nn(o.motor.motorRpm, 1) + ', ' + o.mode + ')');
+      let moved = null;
+      for (const [x, y] of [['72', '24'], ['100', '36'], ['40', '60'], ['60', '40']]) {
+        const q = await look(async (pg) => { await pg.fill('#mx', x); await pg.fill('#my', y); await pg.dispatchEvent('#my', 'change'); });
+        if (q && q.sw && q.sw.thetaDeg[0] !== mx0) { moved = q; break; }
+      }
+      check(!!moved && !BAD.test(moved.text) && moved.text.includes(nn(moved.sw.thetaDeg[0], 2)) && moved.text.includes(nn(moved.sw.v[1], 3)), tag + 'moved robot: numbers follow the new result' + (moved ? '' : ' (no spot with an arc found)'));
+      check(d.reqs.length === n0 && d.reqs.every((u) => /cdnjs\.cloudflare\.com|fonts\.(googleapis|gstatic)\.com/.test(u)), tag + 'no requests beyond the page load (' + d.reqs.length + ')');
+      if (url === URL_) {   // the .tex export carries the derivation sections of the spot on screen (O9), in the page, through the real download handler
+        const tex = await d.page.evaluate(async () => {
+          const E = window.ShotEngine, P = { ballId: 'pollen', target: 'red', hiveState: { red: -1, blue: 1 }, mouth: { x: -12.75, y: -48, height: 16 }, precision: { sigThetaDeg: 1, sigYawDeg: 1, sigShooter: 0.015 }, motorId: 'yj6000',
+            hood: { mode: 'adjustable', minDeg: 45, maxDeg: 80 }, shooter: { type: 'single', wheelDiameterMm: 96, motorsPerWheel: 1, gear: 1, topRatio: 0.6, inertiaKgM2: 4e-4, shotInterval: 0.5 } };
+          const rows = E.exportPoints(P, { stepIn: 12 }).slice(0, 6).map((q) => { const at = Object.assign({}, P, { mouth: Object.assign({}, P.mouth, { x: q.x, y: q.y }) }); return E.exportRow(E.evaluate(at, 'full'), q, at, {}, null); });
+          let blob = null; const orig = URL.createObjectURL; URL.createObjectURL = (b) => { blob = b; return orig.call(URL, b); };
+          window.ShotUI.exportAlgo.setTable({ rows, params: P, cfg: null, etaCurve: null, ready: true }); document.getElementById('expAlgoTex').click();
+          await new Promise((r) => setTimeout(r, 300)); return blob ? await blob.text() : '';
+        });
+        check(/\\subsection\*\{Scoring window\}/.test(tex) && /\\subsection\*\{Margin\}/.test(tex) && tex.includes('\\section{Geometry and frame}'), tag + '.tex export: Block H sections plus the derivation sections');
+        check(!/[^\x00-\x7f]/.test(tex) && tex.split('\\end{document}').length === 2 && !/NaN|undefined/.test(tex), tag + '.tex export: ASCII, one \\end{document}, no NaN');
+        if (opt('--tex-out')) fs.writeFileSync(opt('--tex-out'), tex);
+      }
+      check(d.errors.length === 0, tag + 'no page errors: ' + d.errors.join('|'));
   }
 } finally { await browser.close(); }
 if (failed) { console.log(failed + ' check(s) FAILED'); process.exit(1); }

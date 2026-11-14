@@ -68,3 +68,27 @@ body.has-margin-map :is(#scanBtn, #scanProgress, #heatLegend) { display: none; }
 .fc-computed { font: 500 12.5px/1.2 var(--mono); color: var(--ink-2); }
 .fc-msg { margin: 0; font-size: 12.5px; color: var(--bad-mark, #c33); }
 .fc-msg:empty { display: none; }
+/* Show the derivation (ui-derive, #6): collapsed block at the end of the math dialog; neutral ink and rule colours only (follows the dark theme through the variables) */
+.derive { margin: 14px 0 4px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel-2); }
+.derive > summary { cursor: pointer; padding: 10px 14px; font: 600 15px/1.3 var(--cond); color: var(--ink); }
+.derive > summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.derive[open] > summary { border-bottom: 1px solid var(--rule); }
+.dv-body { padding: 4px 14px 12px; display: grid; gap: 2px; }
+.dv-intro, .dv-lead, .dv-p { color: var(--ink-2); font-size: 14px; max-width: 80ch; margin: 4px 0 6px; }
+.dv-sec { padding: 10px 0 6px; border-bottom: 1px solid var(--rule); }
+.dv-sec:last-child { border-bottom: 0; }
+.dv-sec h4 { font: 600 15.5px/1.3 var(--cond); color: var(--ink); margin: 0 0 4px; }
+.dv-row { display: grid; grid-template-columns: 190px minmax(0, 1.1fr) minmax(0, 1fr); gap: 4px 16px; padding: 7px 0; border-top: 1px solid var(--rule); align-items: baseline; }
+.dv-what { font: 600 13px/1.3 var(--cond); color: var(--ink-2); }
+.dv-m { font: 400 15px/1.6 "Cambria Math", "STIX Two Math", "Latin Modern Math", Georgia, "Times New Roman", serif; color: var(--ink); overflow-wrap: anywhere; }
+.dv-calc .dv-res { margin-top: 2px; font: 600 13.5px/1.4 var(--cond); color: var(--ink); overflow-wrap: anywhere; }
+.dv-eq { overflow-x: auto; padding: 4px 8px; margin: 2px 0; }
+.dv-note { margin: 4px 0 2px; color: var(--ink-2); }
+.dv-frac { display: inline-block; vertical-align: middle; text-align: center; margin: 0 2px; }
+.dv-frac > .dv-n, .dv-frac > .dv-d { display: block; padding: 0 3px; font-size: 0.92em; line-height: 1.3; }
+.dv-frac > .dv-n { border-bottom: 1px solid currentColor; }
+.dv-sqrt .dv-rad { border-top: 1px solid currentColor; padding: 0 2px; }
+.dv-up { font-style: normal; }
+.dv-dot { position: relative; display: inline-block; }
+.dv-dot::before { content: "˙"; position: absolute; left: 0; right: 0; top: -0.5em; text-align: center; }
+@media (max-width: 720px) { .dv-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }

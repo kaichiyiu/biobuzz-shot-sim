@@ -651,7 +651,10 @@
       spin = h <= 1 ? tau * Math.log(100) : Infinity;          // to within 1 %
       sigM = h <= 1 ? (M.openLoopSwingV / sh.batteryV) / Math.sqrt(12) : M.sm.s2;
     }
-    return {
+    // dual wheel: impulse-momentum split of the same total energy between the two wheels (issue M2, src/dual-split.js)
+    var DS = sh.type === 'dual' && EXT.dualSplit ? EXT.dualSplit.motor({ ball: bp, vExit: vExit, S0: S0, k: sh.topRatio, vBottom: vWheel, wheelRadiusM: D / 2, IB: I, IT: I, lossFactor: M.lossFactor, control: sh.control, tauS: tau, wFree: wwf, dt: dt }) : null;
+    if (DS) { E = DS.EBJ; w1 = DS.w1B; dip = DS.dipB; rec = DS.recoveryS; wdt = DS.wdtB; residual = DS.residual; share = DS.share; }
+    var out = {
       motorId: mo.id, label: mo.label, freeRpm: mo.freeRpm, usableFreeRpm: free,
       vExit: vExit, wheelRpm: nW, motorRpm: nM, headroom: h, reachable: h <= 1, vCap: vCap, S0: S0,
       dip: dip, recoveryMs: rec * 1000, spinUpMs: spin * 1000, residual: residual,
@@ -664,6 +667,12 @@
         etaSingle: sh.etaSingle, etaDual: sh.etaDual, openLoopSwingV: M.openLoopSwingV, sigmaRule: M.sm
       }
     };
+    if (DS) {
+      out.dipTop = DS.dipT; out.dipExit = DS.dipExit;
+      out.details.w0Top = DS.w0T; out.details.w1Top = DS.w1T; out.details.shareTop = DS.shareTop; out.details.shotEnergyTopJ = DS.ETJ;
+      out.details.inertiaTopKgM2 = I; out.details.cBall = DS.c; out.details.splitModel = 'impulse';
+    }
+    return out;
   }
 
   function motorModel(motorId, shooter, ballId, vExit) {
