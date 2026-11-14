@@ -140,3 +140,34 @@ test('hook: mass + shape mode computes the inertia; configSlice get / set round-
   b.hook.configSlice.set({ wheel: { on: true, diameterMm: 'junk' } });
   assert.equal(b.hook.configSlice.get().wheel.diameterMm, 96);
 });
+
+// ---- F3: overrides shown on the rest of the page
+test('F3 overrides / withNote: pure helpers; the caption note is added once and removed again', () => {
+  const o = U.overrides(U.norm(ON));
+  assert.equal(o.motor, true); assert.equal(o.wheel, true); assert.equal(o.inertiaText, '1e-3'); assert.equal(o.wheelLabel, 'custom wheel (80 mm)');
+  assert.deepEqual([U.overrides(U.norm(null)).motor, U.overrides(U.norm(null)).wheel], [false, false]);
+  assert.equal(U.overrides(U.norm({ wheel: { on: true, diameterMm: 80, inertiaKgM2: 1e-3 }, motor: { on: true, freeRpm: 5400 } })).motor, true);
+  const t = U.withNote('Click a row to use that motor.', true);
+  assert.equal(t, 'Click a row to use that motor. (overridden by Custom motor)'); assert.equal(U.withNote(t, true), t); assert.equal(U.withNote(t, false), 'Click a row to use that motor.');
+});
+
+test('F3 hook: custom motor disables #motor and annotates the motors caption; custom wheel replaces the inertia hint and the Show-the-math wheel label', () => {
+  const host = fakeEl('div'), st = mem(), page = { flywheelHost: host, motor: fakeEl('select'), motorsCaption: fakeEl('p'), inertiaHelp: fakeEl('p'), mathSub: fakeEl('p') };
+  page.motorsCaption.textContent = 'Same wheel. Click a row to use that motor.';
+  page.inertiaHelp.textContent = 'Flywheel inertia per shaft: 4.17e-4 kg·m² (x).'; page.mathSub.textContent = 'x · Wheel A · fixed power at 12 V.';
+  const win = { localStorage: st, ShotFlywheelCustom: FC, ShotMotorCustom: MC, ShotEngine: { _internal: { ext: () => ({ install() {} }) } } };
+  vm.runInNewContext(fs.readFileSync(SRC, 'utf8'), { window: win, document: { createElement: fakeEl, getElementById: (id) => page[id] || null, activeElement: null } });
+  const hook = win.ShotUI.hooks.find((h) => h.name === 'flywheel'), data = { shooter: { wheels: [{ id: 'a', label: 'Wheel A' }] } };
+  hook.onStart({ recalc() {}, data, state: { shooter: { wheelId: 'a' } } });
+  assert.equal(!!page.motor.disabled, false); assert.ok(!/overridden/.test(page.motorsCaption.textContent));
+  hook.configSlice.set(ON);
+  assert.equal(page.motor.disabled, true); assert.equal(page.motorsCaption.textContent, 'Same wheel. Click a row to use that motor. (overridden by Custom motor)');
+  hook.onResult({}, {}, 'full');   // app.js rewrote the caption in the meantime: re-annotated, once
+  page.motorsCaption.textContent = 'Fresh text.'; hook.onResult({}, {}, 'full'); hook.onChange({});
+  assert.equal(page.motorsCaption.textContent, 'Fresh text. (overridden by Custom motor)');
+  assert.match(page.inertiaHelp.textContent, /Flywheel inertia per shaft: 1e-3 kg·m² \(custom wheel/);
+  hook.onMathRender(fakeEl('div'), {}, { shooter: { wheelDiameterMm: 80, inertiaKgM2: 1e-3 } });
+  assert.equal(page.mathSub.textContent, 'x · custom wheel (80 mm) · fixed power at 12 V.');
+  hook.configSlice.set(null);
+  assert.equal(page.motor.disabled, false); assert.equal(page.motorsCaption.textContent, 'Fresh text.');
+});

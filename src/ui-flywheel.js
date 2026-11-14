@@ -72,7 +72,14 @@
   }
   function show(f, x) { var d = x * f[4]; return f[0] === 'fcInertia' ? Number(d.toPrecision(3)).toExponential().replace('e+', 'e') : String(Number(d.toPrecision(6))); }
 
-  var api = { norm: norm, load: load, save: save, parse: parse, extend: extend, setField: setField, motorOf: motorOf, FIELDS: FIELDS, KEY: KEY, NOTE: NOTE };
+  // what the custom parts override elsewhere on the page: the motor picker / Design help, the inertia hint, the wheel label of Show the math
+  var CAP_NOTE = ' (overridden by Custom motor)';
+  function overrides(v) {
+    var w = v.wheel, ok = w.on && FC.check(w).ok, I = ok ? FC.inertiaOf(w) : NaN;
+    return { motor: !!motorOf(v), wheel: ok && I > 0, wheelLabel: ok ? 'custom wheel (' + w.diameterMm + ' mm)' : '', inertiaText: ok ? show(FIELDS[1], I) : '' };
+  }
+  function withNote(text, on) { var t = String(text == null ? '' : text).split(CAP_NOTE).join(''); return on ? t + CAP_NOTE : t; }
+  var api = { norm: norm, load: load, save: save, parse: parse, extend: extend, setField: setField, motorOf: motorOf, overrides: overrides, withNote: withNote, FIELDS: FIELDS, KEY: KEY, NOTE: NOTE };
   if (NODE) { module.exports = api; return; }
 
   // ------------------------------------------------------------------ controls (browser)
@@ -134,7 +141,23 @@
       var v = i ? w.shape : w.mode;
       s.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === v)); });
     });
+    if (document.getElementById) tweak();
     els.computed.textContent = 'Inertia = ' + show(FIELDS[1], FC.inertiaOf(w)) + ' kg·m²';
+  }
+  // app.js rewrites these texts on its own schedule (motors table arrives async): re-apply after each rewrite; every write is guarded by equality
+  function byId(id) { return document.getElementById(id); }
+  function tweak() {
+    var o = overrides(cur), sel = byId('motor'), cap = byId('motorsCaption'), ih = byId('inertiaHelp'), t;
+    if (sel) { sel.disabled = o.motor; if (o.motor) sel.setAttribute('title', 'Overridden by Custom motor'); else if (sel.removeAttribute) sel.removeAttribute('title'); }
+    if (cap) { t = withNote(cap.textContent, o.motor); if (t !== cap.textContent) cap.textContent = t; }
+    if (ih && o.wheel) {
+      t = 'Flywheel inertia per shaft: ' + o.inertiaText + ' kg·m² (custom wheel; overrides the wheel and steel-flywheel choices above). Heavier = smaller speed dip per shot but slower spin-up.';
+      if (ih.textContent !== t) ih.textContent = t;
+    }
+  }
+  function watch() {
+    if (typeof MutationObserver === 'undefined') return;
+    ['motorsCaption', 'inertiaHelp'].forEach(function (id) { var n = byId(id); if (n) new MutationObserver(tweak).observe(n, { childList: true, characterData: true, subtree: true }); });
   }
   function install(cm) { var E = root.ShotEngine, x = E && E._internal && E._internal.ext && E._internal.ext('motorCustom'); if (x) x.install(cm); }
 
@@ -142,10 +165,17 @@
   root.ShotUI.flywheel = api;
   root.ShotUI.hooks = (root.ShotUI.hooks || []).concat([{
     name: 'flywheel',
-    onStart: function (c) { ctx = c; var host = document.getElementById('flywheelHost'); if (host) mount(host); },
+    onStart: function (c) { ctx = c; var host = document.getElementById('flywheelHost'); if (host) mount(host); watch(); tweak(); },
+    onChange: function () { tweak(); },
+    onResult: function () { tweak(); },
     extendParams: function (p) { return extend(p, cur, install); },
     onMathRender: function (body, r, p) {
-      var parts = [];
+      var parts = [], o = overrides(cur), sub = byId('mathSub');
+      tweak();
+      if (o.wheel && sub && sub.textContent) {   // the header line names the picked wheel: say custom wheel instead
+        var lab = ctx && ctx.data && ctx.data.shooter && ctx.state && ctx.data.shooter.wheels.filter(function (x) { return x.id === ctx.state.shooter.wheelId; })[0];
+        if (lab && sub.textContent.indexOf(' · ' + lab.label + ' · ') >= 0) sub.textContent = sub.textContent.replace(' · ' + lab.label + ' · ', ' · ' + o.wheelLabel + ' · ');
+      }
       if (!p) return;
       if (cur.wheel.on) parts.push('custom wheel: ' + p.shooter.wheelDiameterMm + ' mm, ' + show(FIELDS[1], p.shooter.inertiaKgM2) + ' kg·m² (replaces the wheel and steel-flywheel choice above)');
       if (p && p.customMotor) parts.push('custom motor: ' + p.customMotor.freeRpm + ' rpm free, ' + p.customMotor.stallTorqueNm + ' N·m stall');
