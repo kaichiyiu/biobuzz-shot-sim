@@ -21,7 +21,7 @@
     var dip = dual ? m.dipExit : m.dip, e = Math.exp(-bs.intervalS / m.tauS);
     if (dual) rows.push(row('Dip per shot (both wheels)', 'd_x = \\frac{d_B + k\\,d_T}{1 + k}', '\\frac{' + n(100 * m.dip, 2) + ' + ' + n(d.topRatio, 2) + '\\cdot ' + n(100 * m.dipTop, 2) + '}{1 + ' + n(d.topRatio, 2) + '}\\,\\%', n(100 * dip, 2) + ' % (bottom wheel ' + n(100 * m.dip, 2) + ' %, top wheel ' + n(100 * m.dipTop, 2) + ' %)'));
     else rows.push(row('Dip per shot', '\\text{dip} = 1 - \\frac{\\omega_1}{\\omega_0}', '1 - \\frac{' + n(d.w1, 2) + '}{' + n(d.w0, 2) + '}', n(100 * dip, 2) + ' %'));
-    rows.push(row('Recovery between shots', bs.control === 'pid' ? 'x_{k+1} = \\min\\left(1,\\ r - (r - a_k)\\,e^{-\\Delta t/\\tau}\\right)' : 'x_{k+1} = 1 - (1 - a_k)\\,e^{-\\Delta t/\\tau}', 'a_k = x_k\\,(1 - ' + n(dip, 4) + '),\\ \\ e^{-' + n(bs.intervalS, 2) + '/' + n(m.tauS, 2) + '} = ' + n(e, 4),
+    rows.push(row('Recovery between shots', bs.control === 'pid' ? 'x_{k+1} = \\min\\left(1,\\ r - (r - a_k)\\,e^{-\\Delta t/\\tau}\\right)' : 'x_{k+1} = 1 - (1 - a_k)\\,e^{-\\Delta t/\\tau}', (bs.control === 'pid' ? 'r = \\omega_{free}/\\omega_0 = ' + n(d.wFree / d.w0, 3) + ',\\ \\ ' : '') + 'a_k = x_k\\,(1 - ' + n(dip, 4) + '),\\ \\ e^{-' + n(bs.intervalS, 2) + '/' + n(m.tauS, 2) + '} = ' + n(e, 4),
       (bs.control === 'pid' ? 'PID' : 'open loop (fixed power)') + ', ' + bs.shots + ' shots every ' + n(bs.intervalS, 2) + ' s'));
     rows.push(row('Speed deficit before each shot', 'd_k = 1 - x_k', bs.perShotPct.map(function (x) { return n(x, 2); }).join(',\\ ') + '\\,\\%', 'x = wheel speed before the shot / setpoint speed; shot 1 is at the setpoint'));
     rows.push(row('Fixed offset', 'D = -\\ln(1 - d_{max})', '-\\ln(1 - ' + n(dm, 4) + ') = ' + n(Dl, 4), n(100 * (1 - Math.exp(-Dl)), 2) + ' % of speed, not scaled by s'));
@@ -34,6 +34,7 @@
     if (sp) notes.push('The first shot is set higher so that the later, slower shots stay inside the window; the margin above refers to this setpoint. The search runs along the speed axis only, with the angle and yaw of the setpoint kept; ties go to the cell closest to the middle of the burst\'s speed span.');
     notes.push('The deficit is a fixed offset, not a tolerance: it is applied in full at every scale s. Each shot loses its share of the wheel energy (energy ∝ speed²) and recovers for the interval by the motor model.');
     if (dual) notes.push('Dual wheels: the next ball leaves at the sum of the two surface speeds, so the burst follows the exit-speed dip, the weighted mean of the two wheels\' dips.');
+    if (dual && bs.control === 'pid') notes.push('Recovery rates differ slightly per wheel; one scalar exit-speed dip is used and can overstate the deficit when shots are less than about 50 ms apart.');
     return { id: 'burst', title: 'Burst', lead: 'A burst fires ' + bs.shots + ' balls in a row. After each ball the flywheel has lost speed and has only the interval to recover, so later balls leave slower. The largest of these deficits is carried into the margin as a shift of the speed window.', rows: rows, notes: notes };
   }
 

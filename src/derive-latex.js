@@ -35,7 +35,7 @@
 
   function rowTex(w) {
     var l = (w.what ? txt(w.what) + ' \\quad ' : '') + '& ' + (w.tex ? texMath(w.tex) : '\\ ');
-    var env = '\\begin{align*}\n' + l + (w.num ? ' \\\\\n& = ' + texMath(w.num) : '') + '\n\\end{align*}';
+    var env = '\\begin{align*}\n' + l + (w.num ? ' \\\\\n&' + (/^\s*[A-Za-z\\]\w*\s*(_\{?\w+\}?)?\s*=/.test(w.num) ? ' ' : ' = ') + texMath(w.num) : '') + '\n\\end{align*}';
     return env + (w.res ? '\n\\hspace*{2em}$\\Rightarrow$ ' + texEsc(w.res) : '') + '\n';
   }
   function sectionTex(s) {

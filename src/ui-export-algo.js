@@ -146,7 +146,12 @@
     if (!r || !r.best || !DL || !UD || !data) return '';
     var p = Object.assign({}, data.params);
     if (r.tolerance && !p.tolerance) p.tolerance = r.tolerance.tolerance;
-    return DL.latex(UD.build(r, p, { E: ctx.engine, units: null }), { preview: r.mode === 'coarse' });
+    var U = ctx.units, tex = DL.latex(UD.build(r, p, { E: ctx.engine, units: null }), { preview: r.mode === 'coarse' }), st = ctx.state, q, who = '';
+    if (U && st && st.mouth && isFinite(r.distIn)) {
+      q = U.fieldToDisplay(st.mouth.x, st.mouth.y);
+      who = 'This derivation describes the spot on screen: shooter mouth at x = ' + U.nf(q.x, 1) + ', y = ' + U.nf(q.y, 1) + ' ' + U.lenUnit() + ' (field corner frame), ' + U.nf(U.toLen(r.distIn), 1) + ' ' + U.lenUnit() + ' from the hive.\n\n';
+    }
+    return who + tex;
   }
   function onDownload(id, make) {
     try { save(id, make()); } catch (e) { say('Download failed: ' + (e && e.message ? e.message : e)); }

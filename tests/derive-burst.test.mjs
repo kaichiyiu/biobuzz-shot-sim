@@ -32,6 +32,13 @@ test('dual wheels: the dip row is the exit-speed dip of r.motor and the note nam
   assert.ok(rowOf(s, 'Dip per shot (both wheels)').res.startsWith(`${D.n(100 * r.motor.dipExit, 2)} %`));
   assert.ok(rowOf(s, 'Dip per shot (both wheels)').res.includes(`top wheel ${D.n(100 * r.motor.dipTop, 2)} %`));
   assert.ok(s.notes.some((x) => /exit-speed dip/.test(x)));
+  assert.equal(s.notes.some((x) => /less than about 50 ms/.test(x)), false);
+  const pd = run({ ...TOL, burstShots: 2, burstIntervalS: 2 }, { type: 'dual', topRatio: 0.6, control: 'pid' }), sp2 = B.burst(pd.r, pd.p, {});
+  assert.ok(sp2, "PID dual burst section");
+  if (sp2) {
+    assert.ok(sp2.notes.some((x) => /less than about 50 ms/.test(x)));
+    const rr = rowOf(sp2, 'Recovery between shots'), dd = pd.r.motor.details; assert.ok(rr.num.startsWith(`r = \\omega_{free}/\\omega_0 = ${D.n(dd.wFree / dd.w0, 3)}`), rr.num);
+  }
   const single = run({ ...TOL, burstShots: 2, burstIntervalS: 2 }); assert.equal(rowOf(B.burst(single.r, single.p, {}), 'Dip per shot (both wheels)'), undefined);
   assert.equal(B.burst(single.r, single.p, {}).notes.some((x) => /exit-speed dip/.test(x)), false);
 });

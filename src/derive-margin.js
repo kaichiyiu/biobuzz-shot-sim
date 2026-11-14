@@ -39,7 +39,7 @@
       rows.push(row('Box: yaw', 'e_Y = \\lceil s\\,k_Y\\rceil', ceilTex(s, g.kY, eY), '±' + eY + ' cells = ±' + n(eY * g.yawStep, 2) + '°'));
     }
     var capped = t.capped, rs = t.resolution;
-    rows.push(row('Box margin', 's = s_{lo}', capped ? 's = 4' : 's \\in [' + n(s, 3) + ',\\ ' + n(s + (rs || 0), 3) + ')', n(s, 3) + (capped ? ' (cap)' : '') + (!capped && fin(rs) ? ', resolution ' + n(rs, 3) : '')));
+    rows.push(row('Box margin', 's = s_{lo}', capped ? 's = 4' : (s === 0 ? 's = 0' : 's \\in [' + n(s, 3) + ',\\ ' + n(s + (rs || 0), 3) + ')'), n(s, 3) + (capped ? ' (cap)' : '') + (!capped && fin(rs) ? ', resolution ' + n(rs, 3) : '')));
     if (t.limitingAxis && t.limitingAxis !== 'along') rows.push(row('Limiting axis', 'argmin_i\\ s_i', '\\text{' + t.limitingAxis + '}', t.limitingAxis + ', ' + (t.limitingSide < 0 ? 'low side' : 'high side')));
     if (t.perAxis) rows.push(row('Each axis alone', 's_\\psi,\\ s_\\theta,\\ s_n', n(t.perAxis.yaw, 3) + ',\\ ' + n(t.perAxis.angle, 3) + ',\\ ' + n(t.perAxis.rpm, 3), 'yaw ' + n(t.perAxis.yaw, 2) + ', angle ' + n(t.perAxis.angle, 2) + ', rpm ' + n(t.perAxis.rpm, 2) + ' (the other axes at the setpoint)'));
     if (t.along) {

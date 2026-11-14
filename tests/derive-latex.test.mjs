@@ -55,3 +55,8 @@ test('the .tex with the derivation compiles when pdflatex is available', (t) => 
   const r = spawnSync('pdflatex', ['-interaction=nonstopmode', '-halt-on-error', 'd.tex'], { cwd: dir, encoding: 'utf8', timeout: 90000 });
   assert.equal(r.status, 0, (r.stdout || '').split('\n').filter((l) => /^!|^l\.\d/.test(l)).join('\n')); assert.ok(fs.existsSync(path.join(dir, 'd.pdf')));
 });
+
+test('num that starts with "symbol =" is not given a second leading "="', () => {
+  const t = DL.latex([{ id: 'x', title: 'T', rows: [{ what: 'A', tex: 'y', num: 'a_k = x_k\\,2', res: 'ok' }, { what: 'B', tex: 'y', num: '1 + 2', res: 'ok' }], notes: [] }], {});
+  assert.ok(t.includes('& a_k = x_k') && !t.includes('= a_k = x_k')); assert.ok(t.includes('& = 1 + 2'));
+});
