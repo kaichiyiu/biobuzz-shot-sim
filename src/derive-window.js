@@ -65,9 +65,9 @@
       if (rw.clippedByMotor) notes.push('The upper edge of the rpm window is the motor limit.');
     }
     if (fin(m.usableFreeRpm)) rows.push(row('Share of the usable free speed', 'h = \\frac{n}{n_{free}}', '\\frac{' + n(m.motorRpm, 1) + '}{' + n(m.usableFreeRpm, 0) + '}', n(100 * m.motorRpm / m.usableFreeRpm, 1) + ' %'));
-    notes.push('Speeds in m/s' + (U && U.speedUnit && U.speedUnit() !== 'm/s' ? ' (the panels use ' + U.speedUnit() + ')' : '') + '; n_free = free rpm × free-speed factor × battery V / rated V. η is the Shooter setting (the calibration form writes its fitted value there); a per-rpm η curve is used in the export table, not here.');
+    notes.push('Speeds in m/s' + (U && U.speedUnit && U.speedUnit() !== 'm/s' ? ' (the panels use ' + U.speedUnit() + ')' : '') + '; $n_{free}$ = free rpm × free-speed factor × battery V / rated V. η is the Shooter setting (the calibration form writes its fitted value there); a per-rpm η curve is used in the export table, not here.');
     if (dual) notes.push('Dual wheels: k = top / bottom wheel speed ratio; the ball leaves at η_exit times the bottom wheel surface speed.');
-    return { id: 'eta', title: 'Exit speed to motor rpm', lead: 'The ball leaves at a fixed fraction of the wheel surface speed, v = η_exit π D n_w / 60, and the wheel turns G times per motor turn, n_w = G n. The rpm window is the speed window times κ.', rows: rows, notes: notes };
+    return { id: 'eta', title: 'Exit speed to motor rpm', lead: 'The ball leaves at a fixed fraction of the wheel surface speed, $v = \\eta_{exit}\\,\\pi D\\,n_w / 60$, and the wheel turns $G$ times per motor turn, $n_w = G\\,n$. The rpm window is the speed window times $\\kappa$.', rows: rows, notes: notes };
   }
 
   return { window: window, eta: eta };
