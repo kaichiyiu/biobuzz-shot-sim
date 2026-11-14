@@ -13,7 +13,7 @@ const dataJs = `window.SHOT_DATA = ${JSON.stringify(data)};\n`;
 fs.writeFileSync(path.join(ROOT, 'src', 'data.js'), dataJs, 'utf8');
 
 // engine + extensions (#3 rect window, #2 hood, sweep), in registration order; also used by the worker
-const ENGINE_FILES = ['engine.js', 'motor-custom.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js', 'engine-export.js', 'engine-export-bearing.js', 'engine-burst.js', 'engine-tolerance-core.js', 'engine-tolerance-along.js', 'engine-tolerance-burst.js', 'engine-tolerance.js'];
+const ENGINE_FILES = ['engine.js', 'motor-custom.js', 'dual-split.js', 'engine-rect.js', 'engine-hood-core.js', 'engine-hood.js', 'engine-sweep.js', 'engine-entry.js', 'engine-export.js', 'engine-export-bearing.js', 'engine-burst.js', 'engine-tolerance-core.js', 'engine-tolerance-along.js', 'engine-tolerance-burst.js', 'engine-tolerance.js'];
 const engine = ENGINE_FILES.map((f) => rd('src', f)).join('\n');
 const worker = rd('src', 'worker.js');
 // worker-only additions (appended after worker.js): calib-core for the eta curve, the export sweep protocol. The page loads calib-core through UI_FILES.
