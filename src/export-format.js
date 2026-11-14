@@ -46,6 +46,9 @@
     var rpmPerMps = median(ratios), notes = [];
     notes.push('Accuracy: full. Every row is a full-resolution evaluation; coarse (preview) results are never exported.');
     notes.push('Rows are keyed by robot distance: dRobotIn = dMouthIn + the mouth-forward offset, dMouthIn = horizontal distance from the shooter mouth to the target CELL mouth centre.');
+    var cm = cfg && cfg.ext && cfg.ext.flywheelCustom && cfg.ext.flywheelCustom.motor;   // custom motor on and valid (ShotMotorCustom limits): config.robot.motorId is then only the picker's value
+    if (cm && cm.on === true && num(cm.freeRpm) !== null && cm.freeRpm >= 10 && cm.freeRpm <= 30000 && num(cm.stallTorqueNm) !== null && cm.stallTorqueNm >= 0.001 && cm.stallTorqueNm <= 50)
+      notes.push('Motor: custom (' + cm.freeRpm + ' rpm, ' + cm.stallTorqueNm + ' N·m). config.robot.motorId is the motor picker value and was overridden by config.ext.flywheelCustom.motor.');
     notes.push('motorRpm is the motor output-shaft rpm (window centre c, lowest and highest rpm that still score); ticksPerSec = motorRpm / 60 x encoder counts per motor output revolution.');
     notes.push('Single-eta limitation: the flight model uses ONE exit-speed factor (eta) for the whole table. A per-rpm eta curve from the calibration is applied only when converting exit speed to rpm in these rows; the flight is not re-simulated with it.');
     notes.push('Retune constant: for a fixed eta, motor rpm = rpmPerMps x exit speed (m/s). Scale this one number at the field instead of editing every row.');

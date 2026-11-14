@@ -2,7 +2,12 @@
  * BIOBUZZ Shot Sim - engine extension "tolerance" (#7, #8): margin = the largest box around the setpoint, sides proportional to the team's
  * +- tolerances, that scores everywhere inside (bounded errors, no distribution; PLAN 2.5, D9, D11). Maths: process_docs/issue-7/design.md.
  *
- * ToleranceInput = { yawDeg, angleDeg, rpm, posIn (all >= 0), source: 'measured' | 'preset', best }
+ * ToleranceInput = { yawDeg, angleDeg, rpm, posIn (all >= 0), source: 'measured' | 'preset', best, burstShots (2..20; key absent otherwise), burstIntervalS (optional) }
+ *   burstShots > 1 (#9, needs engine-burst.js): bias.speedPct = the largest per-shot deficit of E.burstPlan; it is a FIXED offset (not scaled by s): the
+ *   rect-hit grid is eroded along the speed axis by B = ceil(ln(1/(1 - speedPct/100)) / lnStep) cells (a cell stays a hit only if it and the B cells below hit;
+ *   cells below the view = not hit) before the box search (the core is untouched); res.tolerance.bias = { speedPct, shots, intervalS, control, perShotPct, cells: B }.
+ *   Burst-aware setpoint (engine-tolerance-burst.js): the headline refers to the speed cell (same angle / yaw) with the largest eroded margin; res.tolerance.burstSetpoint =
+ *   { motorRpm, exitSpeedMps, v, shiftPct (vs the engine setpoint), cells, cell, thetaDeg, yawDeg } | null (bias.fits false: margin 0). setpoint stays the engine's.
  * norm(raw) -> ToleranceInput | null          junk -> 0 per field; all four 0 -> null. best = false switches the bestSetpoint search off.
  * verdictOf(margin, bands = BANDS) -> E.VERDICTS string   margin >= ok POSSIBLE, >= mid NOT CONSISTENT, else WON'T WORK (null -> WON'T WORK)
  * result(view, sel, res, tn, { p, mo, sh, bp }) -> ToleranceResult | null (null when tn is null)
@@ -15,7 +20,7 @@
  *   setpoint = { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, cell, moved }; bestSetpoint (full view only, else null) = the cell of the same view
  *   with the largest box margin { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, boxMargin, alongMargin, margin, viewLimited, cell, evaluated, searchMs }.
  * UMD: Node module.exports = factory(require('./engine.js'), require('./engine-tolerance-core.js')); browser / worker factory(root.ShotEngine,
- * root.ShotToleranceCore). Load after engine-tolerance-core.js and engine-tolerance-along.js.
+ * root.ShotToleranceCore). Load after engine-tolerance-core.js, engine-tolerance-along.js and engine-tolerance-burst.js.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'), require('./engine-tolerance-core.js'));
@@ -29,8 +34,10 @@
 
   function norm(raw) {
     if (!raw || typeof raw !== 'object') return null;
+    var bs = Math.round(fin(raw.burstShots));
     var t = { yawDeg: fin(raw.yawDeg), angleDeg: fin(raw.angleDeg), rpm: fin(raw.rpm), posIn: fin(raw.posIn),
       source: raw.source === 'preset' ? 'preset' : 'measured', best: raw.best !== false };
+    if (bs > 1) { t.burstShots = Math.min(bs, 20); if (fin(raw.burstIntervalS)) t.burstIntervalS = fin(raw.burstIntervalS); }   // keys only when asked: older callers see the old shape
     return t.yawDeg || t.angleDeg || t.rpm || t.posIn ? t : null;
   }
 
@@ -46,7 +53,7 @@
     return { wY: wY, kA: tn.angleDeg / view.thStep, kY: wY / view.yawStep, kB: function (b) {
       var x = tn.rpm / (rpmC * view.speeds[b] / vC);
       if (!(x > 0)) return [0, 0];
-      return [x >= 1 ? b + 1 : Math.min(-Math.log(1 - x) / view.lnStep, b + 1), Math.log(1 + x) / view.lnStep];
+      return [Math.min(x >= 1 ? b + 1 : -Math.log(1 - x) / view.lnStep, b + 1), Math.log(1 + x) / view.lnStep];
     } };
   }
 
@@ -130,6 +137,14 @@
       margin: Math.min(r.box.s, alongMargin == null ? Infinity : alongMargin, SMAX), viewLimited: r.box.viewLimited, cell: c, evaluated: r.evaluated, searchMs: clock() - t0 };
   }
 
+  // burst (#9): the largest per-shot speed deficit of the burst, as a one-sided speed bias (math review issue 1); no plan (no burst module / aim) -> 0
+  function biasOf(res, tn) {
+    var B = I.ext('burst'), pl = B ? B.planOf(res, { shots: tn.burstShots, intervalS: tn.burstIntervalS || undefined }) : null;
+    if (!pl) return { speedPct: 0, shots: tn.burstShots, intervalS: null, control: null, perShotPct: [] };
+    var d = pl.perShot.map(function (s) { return Math.max(0, s.deficitPct); });
+    return { speedPct: Math.max.apply(null, d), shots: pl.shots, intervalS: pl.intervalS, control: pl.control, perShotPct: d };
+  }
+
   function result(view, sel, res, tn, deps) {
     if (!tn) return null;
     var V = E.VERDICTS, mc = res.motor, down = E.constants().model.downgrade, out = {
@@ -142,9 +157,21 @@
     var sp = sel && res.best && view && view.rectHits && mc ? setpointOf(view, sel, deps.p) : null;
     if (sel && res.best && view && view.rectHits && mc && !sp) out.margin = out.boxMargin = 0;   // no rect-hit cell at all
     if (sp) {
-      var dims = [view.nA, view.nB, view.nC], S = TC.summedVolume(view.rectHits, dims), yo = wrap180(sp.yaw - res.psi0Deg);
-      var rpmC = I.motorCore(deps.mo, deps.sh, deps.bp, sp.v).motorRpm, K = rates(view, tn, res.distIn, rpmC, sp.v), bx = boxAt(view, S, K, sp.cell, SMAX);
-      var al = alongOf(deps, tn, sp.theta, sp.v, yo), alongMargin = al ? al.margin : null, useAlong = alongMargin != null && alongMargin < bx.s;
+      var dims = [view.nA, view.nB, view.nC], yo = wrap180(sp.yaw - res.psi0Deg);
+      var rpmC = I.motorCore(deps.mo, deps.sh, deps.bp, sp.v).motorRpm, bias = tn.burstShots > 1 ? biasOf(res, tn) : null, BS = I.ext('toleranceBurst');
+      if (bias) {
+        bias.cells = bias.speedPct > 0 ? Math.ceil(-Math.log(1 - Math.min(bias.speedPct, 99.9) / 100) / view.lnStep) : 0;
+        if (bias.cells > 0 && BS) view = Object.assign({}, view, { rectHits: BS.erodeLow(view.rectHits, dims, bias.cells) });   // one grid for S, the box and bestSetpoint
+        out.bias = bias;
+      }
+      var S = TC.summedVolume(view.rectHits, dims), K = rates(view, tn, res.distIn, rpmC, sp.v), bx0 = boxAt(view, S, K, sp.cell, SMAX), bx = bx0, vh = sp.v, bsp = null;
+      if (bias && bias.cells > 0 && BS) {   // burst-aware setpoint: first-shot speed = the best cell along the speed axis of the eroded grid; the headline refers to it
+        var pk = BS.pick(view, S, K, sp.cell, { top: sel.cellMaxB == null ? view.nB - 1 : sel.cellMaxB, B: bias.cells, sMax: SMAX, ok: function (b) { return rpmC * view.speeds[b] / sp.v < (mc.usableFreeRpm || Infinity); }, along: function (b) { return alongOf(deps, tn, sp.theta, view.speeds[b], yo); } });
+        bias.fits = !!pk;
+        if (pk) { bx = pk.bx; vh = view.speeds[pk.b]; bsp = { motorRpm: rpmC * vh / sp.v, exitSpeedMps: vh, v: vh, shiftPct: 100 * (vh / sp.v - 1), cells: pk.b - sp.cell[1], cell: [sp.cell[0], pk.b, sp.cell[2]], thetaDeg: sp.theta, yawDeg: sp.yaw }; }
+        out.burstSetpoint = bsp;
+      }
+      var al = alongOf(deps, tn, sp.theta, vh, yo), alongMargin = al ? al.margin : null, useAlong = alongMargin != null && alongMargin < bx.s;
       out.boxMargin = bx.s; out.alongMargin = alongMargin; out.margin = Math.min(bx.s, alongMargin == null ? Infinity : alongMargin, SMAX);
       out.capped = out.margin >= SMAX; out.resolution = bx.resolution; out.viewLimited = bx.viewLimited; out.along = al;
       out.perAxis = { yaw: bx.perAxis[2], angle: bx.perAxis[0], rpm: bx.perAxis[1] };
@@ -155,7 +182,7 @@
       // sideways position you can tolerate: the position share of the YAW axis margin alone (it rides on the aim window), so it does not move with the angle / rpm tolerances
       out.position = { lateralIn: tn.posIn > 0 ? res.distIn * Math.tan(Math.min(89, Math.min(bx.perAxis[2], SMAX) * Math.atan(tn.posIn / Math.max(res.distIn || 0, 1e-9)) / RAD) * RAD) : null, alongIn: al ? [-al.minusIn, al.plusIn] : null };
       out.setpoint = { thetaDeg: sp.theta, v: sp.v, motorRpm: rpmC, yawDeg: sp.yaw, yawOffsetDeg: yo, cell: sp.cell, moved: sp.moved };
-      if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx, rpmC);
+      if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx0, rpmC);
     }
     out.verdict = verdictOf(out.margin, out.bands);
     if (unreachable) { out.verdict = V[2]; out.cappedBy = 'unreachable'; out.margin = null; out.capped = false; out.limitingAxis = out.limitingSide = null; out.lowerBound = false; }   // boxMargin / alongMargin stay: they describe the uncapped aim

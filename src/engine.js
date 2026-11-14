@@ -580,6 +580,7 @@
     var h0 = clamp(num(mo.height, num(params.h0, num(def.h0, 16))), 4, 29);
     var prDef = (sd.precision && sd.precision[def.precision || 'typical']) || { sigThetaDeg: 1, sigYawDeg: 1, sigShooter: 0.015 };
     var pr = params.precision || {};
+    if (params.motorId === 'custom' && EXT.motorCustom) S.motorById.custom = EXT.motorCustom.make(params.customMotor);   // custom motor (#5); no valid customMotor -> not found -> default motor
     return {
       ballId: ballId, target: target, hiveState: hs,
       mouth: { x: x, y: y, height: h0 }, mouthIn: { x: mxIn, y: myIn }, mouthLimit: L,

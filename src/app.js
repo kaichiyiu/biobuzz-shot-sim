@@ -1198,7 +1198,7 @@
     if (!r || !p) return;
     body.replaceChildren();
     var C = E.constants(), A = C.aero, bp = E.ballProps(p.ballId);
-    var mo = D.motors.motors.find(function (x) { return x.id === p.motorId; });
+    var mo = D.motors.motors.find(function (x) { return x.id === p.motorId; }) || { label: 'Custom motor', freeRpm: p.customMotor ? p.customMotor.freeRpm : 0 };   // custom motor (#5): not a goBILDA row
     var s = state.shooter, sh = p.shooter, m = r.motor, dt = m && m.details, b = r.best;
     var wheel = wheelById[s.wheelId], fi = flywheelInertia(s);
     var f = function (x, d) { return nf(x, d == null ? 2 : d); };

@@ -28,6 +28,12 @@
   function esc(s) {
     return String(s == null ? '' : s).replace(/[^\x20-\x7e]/g, '?').replace(/[\\&%$#_{}~^]/g, function (ch) { return SPECIAL[ch] || '\\' + ch; });
   }
+  // the motor the numbers were made with: the custom motor of cfg.ext.flywheelCustom when it is on and valid (as ShotMotorCustom.norm; ASCII, esc drops non-ASCII), else the picker's id
+  function motorText(cfg) {
+    var m = cfg && cfg.ext && cfg.ext.flywheelCustom && cfg.ext.flywheelCustom.motor, r = cfg && cfg.robot && cfg.robot.motorId;
+    if (m && m.on === true && fin(m.freeRpm) && m.freeRpm >= 10 && m.freeRpm <= 30000 && fin(m.stallTorqueNm) && m.stallTorqueNm >= 0.001 && m.stallTorqueNm <= 50) return 'custom (' + m.freeRpm + ' rpm, ' + m.stallTorqueNm + ' N.m)';
+    return r;
+  }
   function txt(s, fallback) { return s == null || s === '' ? esc(fallback) : esc(s); }
 
   function table(head, rows) {
@@ -98,7 +104,7 @@
     var head = ['$d$ [in]', '$\\rho$ [m]'].concat(fixed ? [] : ['$\\theta$ [deg]'], ['$z_a$ [m]']);
     var rows = aim.map(function (p) { return [tn(p[0], 4), tn(IN_M * (p[0] - f), 4)].concat(fixed ? [] : [tn(Solver.angleFor(c, p[0]), 4)], [tn(p[1], 5)]); });
     return {
-      DATE: txt(cfg && cfg.savedAt && String(cfg.savedAt).slice(0, 10), 'undated'), BALL_ID: txt(cfg && cfg.field && cfg.field.ballId, 'n/a'), MOTOR_ID: txt(cfg && cfg.robot && cfg.robot.motorId, 'n/a'),
+      DATE: txt(cfg && cfg.savedAt && String(cfg.savedAt).slice(0, 10), 'undated'), BALL_ID: txt(cfg && cfg.field && cfg.field.ballId, 'n/a'), MOTOR_ID: txt(motorText(cfg), 'n/a'),
       SHOOTER_TYPE: txt(sh.type, 'n/a'), MASS_KG: tn(c.massKg), AREA_M2: tn(c.areaM2), TICKS: tn(c.ticksPerMotorRev), WHEEL_D_MM: tn(D, 5), GEAR: tn(gear), ETA_ROW: etaRow(c, I), RPM_BLOCK: rpmBlock(c, I, cal), TICKS_BLOCK: ticksBlock(c, I),
       H0_M: tn(c.h0M), H0_IN: tn(c.h0M / IN_M, 5), FWD: tn(f), CALIB_SENTENCE: calibSentence(cal, c.rpmMap), KD: tn(kd), KL0: tn(kl0), RHO: tn(c.rho), CD: tn(c.cd), CL_SLOPE: tn(c.clSlope), G: tn(c.g), S0: tn(c.S0), CL_SMAX: tn(c.clSMax),
       DT: tn(c.dt), DT_MS: tn(c.dt * 1000), T_MAX: tn(LIM.T_MAX), V_LO: tn(LIM.V_LO), V_STEP: tn(LIM.V_STEP), V_HI: tn(LIM.V_HI), V_TOL: tn(LIM.V_TOL), MAX_IT: String(LIM.MAX_IT),
