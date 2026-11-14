@@ -1,5 +1,5 @@
 /* BIOBUZZ Shot Sim - #4 "On-robot algorithm" section under the export table (G4). Browser: window.ShotUI.exportAlgo (+ hook). Node: module.exports (pure helpers).
-   Pure: prepare(rows, params, E, etaCurve?) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params) (H2, derivation .tex)   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
+   Pure: prepare(rows, params, E, etaCurve?) -> {c, usable, reason}   javaText(c, tpl)   texText(c, cfg, tpl, params, extra?) (H2, derivation .tex; extra = LaTeX text added before \end{document})   vectorDistances(rows)   vectorsText(c, rows)   compareCells(cmp, U, system)   checkCells(list, U, system)
          summary(list, stepIn?) -> {n, inside, outside, noWindow, text}   (P1-F7: a point not inside adds the 2 in step hint)   midpointQs(E, params, rows, c) -> mouth points between the table rows   runChecks(E, params, c, qs, {etaCurve, schedule, onPoint, onDone}) -> {cancel}
    Browser: setTable({rows, params, cfg, etaCurve, ready}) is called by ui-export.js when a table is finished; the section lives in a child div of #exportHost.
    Design: process_docs/issue-4/design.md section 14. */
@@ -29,9 +29,9 @@
     out.push(hi, hi + 3);
     return out;
   }
-  function texText(c, cfg, tpl, params) {
-    var D = params && params.shooter && params.shooter.wheelDiameterMm;
-    return lib().T.renderTex(c, cfg || null, tpl, { wheelDiameterMm: D });
+  function texText(c, cfg, tpl, params, extra) {   // extra (optional, O9): the Show the derivation sections, inserted before \end{document}
+    var D = params && params.shooter && params.shooter.wheelDiameterMm, t = lib().T.renderTex(c, cfg || null, tpl, { wheelDiameterMm: D });
+    return extra ? t.replace(/\\end\{document\}\s*$/, function () { return extra + '\n\\end{document}\n'; }) : t;
   }
   function vectorsText(c, rows) { var X = lib().X; return X.vectorsCsv(X.vectors(c, vectorDistances(rows))); }
 
@@ -141,6 +141,13 @@
     });
     render();
   }
+  function derivExtra() {   // Show the derivation sections of the spot on screen (O9); '' without a result or without the modules
+    var r = ctx && ctx.current && ctx.current(), DL = root.DeriveLatex, UD = UI.derive;
+    if (!r || !r.best || !DL || !UD || !data) return '';
+    var p = Object.assign({}, data.params);
+    if (r.tolerance && !p.tolerance) p.tolerance = r.tolerance.tolerance;
+    return DL.latex(UD.build(r, p, { E: ctx.engine, units: null }), { preview: r.mode === 'coarse' });
+  }
   function onDownload(id, make) {
     try { save(id, make()); } catch (e) { say('Download failed: ' + (e && e.message ? e.message : e)); }
   }
@@ -164,7 +171,7 @@
     host.appendChild(box);
     N.java.addEventListener('click', function () { onDownload('java', function () { return javaText(prep.c, root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['ShotSolver.java']); }); });
     N.csv.addEventListener('click', function () { onDownload('csv', function () { return vectorsText(prep.c, data.rows); }); });
-    N.tex.addEventListener('click', function () { onDownload('tex', function () { return texText(prep.c, data.cfg, root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['derivation.tex'], data.params); }); });
+    N.tex.addEventListener('click', function () { onDownload('tex', function () { return texText(prep.c, data.cfg, root.SHOT_TEMPLATES && root.SHOT_TEMPLATES['derivation.tex'], data.params, derivExtra()); }); });
     N.check.addEventListener('click', startCheck);
     UI.exportAlgo.N = N;
   }
