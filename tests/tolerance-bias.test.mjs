@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { loadEngine, BASE } from './load-data.mjs';
 
 const E = loadEngine(), require = createRequire(import.meta.url);
-for (const f of ['burst', 'tolerance-core', 'tolerance-along', 'tolerance']) require(`../src/engine-${f}.js`);   // the loaders get these in K4
+for (const f of ['burst', 'tolerance-core', 'tolerance-along', 'tolerance-burst', 'tolerance']) require(`../src/engine-${f}.js`);   // the loaders get these in K4
 const ADJ = { mode: 'adjustable', minDeg: 45, maxDeg: 80 };
 const shooter = (control) => ({ ...BASE.shooter, inertiaKgM2: 4.17e-4, shotInterval: 0.5, control });
 const OPEN = { ...BASE, hood: ADJ, shooter: shooter('power') }, PID = { ...BASE, hood: ADJ, shooter: shooter('pid') };
@@ -59,7 +59,8 @@ test('moderate tolerance, 3 s interval: 3+ shots give a strictly lower best marg
 
 test('bias without an rpm tolerance still applies (the deficit alone moves the speed axis); all four zero = no tolerance at all', () => {
   const a = ev(OPEN, { yawDeg: 0.5, angleDeg: 0.5 }), b = ev(OPEN, { yawDeg: 0.5, angleDeg: 0.5, burstShots: 5, burstIntervalS: 3 }), c = ev(OPEN, { yawDeg: 0.5, angleDeg: 0.5, burstShots: 5 });
-  assert.ok(b.margin < a.margin, `${a.margin} -> ${b.margin}`);
+  // the deficit alone still shifts the speed axis (cells > 0); the raised first-shot setpoint then wins back the margin (here angle-limited: equal), never more
+  assert.ok(b.bias.cells > 0 && b.burstSetpoint.cells > 0 && b.margin <= a.margin + 1e-12, `${a.margin} -> ${b.margin}`);
   assert.equal(c.margin, 0);
   assert.equal(E.evaluate({ ...OPEN, tolerance: { burstShots: 5 } }, 'full').tolerance, null);
 });

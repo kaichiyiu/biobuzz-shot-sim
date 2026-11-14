@@ -64,14 +64,18 @@
     };
     if (!row.reachable) return row;
     var v = h ? sw.vExit : sw.v, vc = (v[0] + v[1]) / 2, motor, wheel;
+    var bs = res.tolerance && res.tolerance.burstSetpoint;   // burst included in the margin: the first shot fires faster so the whole burst stays in the window (lo / hi stay the window)
+    if (!(bs && bs.shiftPct > 0 && fin(bs.motorRpm) && fin(bs.exitSpeedMps))) bs = null; else vc = bs.exitSpeedMps;
     if (etaCurve) {
       var CC = calibCore(), sh = CC.shooterOf(E, params).sh;
       var m = function (s) { return CC.motorRpmFromExitSpeed(s, sh, etaCurve); };
-      motor = range3(m(v[0]), m(vc), m(v[1]));
+      motor = range3(m(v[0]), m(vc), m(v[1]));   // vc is the burst setpoint's exit speed when it applies
       wheel = scaled(motor, sh.gear);
     } else {
-      motor = range3(sw.motorRpm[0], h ? h.rpmWindow.centerMotorRpm : (sw.motorRpm[0] + sw.motorRpm[1]) / 2, sw.motorRpm[1]);
-      wheel = range3(sw.wheelRpm[0], (sw.wheelRpm[0] + sw.wheelRpm[1]) / 2, sw.wheelRpm[1]);
+      var mc = h ? h.rpmWindow.centerMotorRpm : (sw.motorRpm[0] + sw.motorRpm[1]) / 2, wc = (sw.wheelRpm[0] + sw.wheelRpm[1]) / 2;
+      if (bs) { wc *= bs.motorRpm / mc; mc = bs.motorRpm; }
+      motor = range3(sw.motorRpm[0], mc, sw.motorRpm[1]);
+      wheel = range3(sw.wheelRpm[0], wc, sw.wheelRpm[1]);
     }
     row.motorRpm = motor; row.wheelRpm = wheel;
     row.ticksPerSec = scaled(motor, X.ticksPerMotorRev / 60);

@@ -6,6 +6,8 @@
  *   burstShots > 1 (#9, needs engine-burst.js): bias.speedPct = the largest per-shot deficit of E.burstPlan; it is a FIXED offset (not scaled by s): the
  *   rect-hit grid is eroded along the speed axis by B = ceil(ln(1/(1 - speedPct/100)) / lnStep) cells (a cell stays a hit only if it and the B cells below hit;
  *   cells below the view = not hit) before the box search (the core is untouched); res.tolerance.bias = { speedPct, shots, intervalS, control, perShotPct, cells: B }.
+ *   Burst-aware setpoint (engine-tolerance-burst.js): the headline refers to the speed cell (same angle / yaw) with the largest eroded margin; res.tolerance.burstSetpoint =
+ *   { motorRpm, exitSpeedMps, v, shiftPct (vs the engine setpoint), cells, cell, thetaDeg, yawDeg } | null (bias.fits false: margin 0). setpoint stays the engine's.
  * norm(raw) -> ToleranceInput | null          junk -> 0 per field; all four 0 -> null. best = false switches the bestSetpoint search off.
  * verdictOf(margin, bands = BANDS) -> E.VERDICTS string   margin >= ok POSSIBLE, >= mid NOT CONSISTENT, else WON'T WORK (null -> WON'T WORK)
  * result(view, sel, res, tn, { p, mo, sh, bp }) -> ToleranceResult | null (null when tn is null)
@@ -18,7 +20,7 @@
  *   setpoint = { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, cell, moved }; bestSetpoint (full view only, else null) = the cell of the same view
  *   with the largest box margin { thetaDeg, v, motorRpm, yawDeg, yawOffsetDeg, boxMargin, alongMargin, margin, viewLimited, cell, evaluated, searchMs }.
  * UMD: Node module.exports = factory(require('./engine.js'), require('./engine-tolerance-core.js')); browser / worker factory(root.ShotEngine,
- * root.ShotToleranceCore). Load after engine-tolerance-core.js and engine-tolerance-along.js.
+ * root.ShotToleranceCore). Load after engine-tolerance-core.js, engine-tolerance-along.js and engine-tolerance-burst.js.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'), require('./engine-tolerance-core.js'));
@@ -67,15 +69,6 @@
     var W = I.ext('window'), pr = p.precision;
     var n = W && W.nearestRectHit(view, { a: sel.a, b: sel.b, c: sel.c, cellMaxB: top }, { theta: pr.sigThetaDeg, ln: Math.max(1e-9, sel.sigV || 0), yaw: pr.sigYawDeg });
     return n ? { cell: [n.a, n.b, n.c], theta: view.thetas[n.a], v: view.speeds[n.b], yaw: view.yaws[n.c], moved: true } : null;
-  }
-
-  // burst: a cell stays 1 only if it and the B cells below it on the speed axis (b ascending = faster) are 1 (below the view = unknown -> 0): a fixed, unscaled shift of the low side
-  function erodeLow(H, dims, B) {
-    var nA = dims[0], nB = dims[1], nC = dims[2], out = new Uint8Array(H.length), a, b, c, i, run;
-    for (a = 0; a < nA; a++) for (c = 0; c < nC; c++) {
-      for (run = 0, b = 0; b < nB; b++) { i = (a * nB + b) * nC + c; run = H[i] ? run + 1 : 0; out[i] = run > B ? 1 : 0; }
-    }
-    return out;
   }
 
   function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
@@ -165,14 +158,20 @@
     if (sel && res.best && view && view.rectHits && mc && !sp) out.margin = out.boxMargin = 0;   // no rect-hit cell at all
     if (sp) {
       var dims = [view.nA, view.nB, view.nC], yo = wrap180(sp.yaw - res.psi0Deg);
-      var rpmC = I.motorCore(deps.mo, deps.sh, deps.bp, sp.v).motorRpm, bias = tn.burstShots > 1 ? biasOf(res, tn) : null;
+      var rpmC = I.motorCore(deps.mo, deps.sh, deps.bp, sp.v).motorRpm, bias = tn.burstShots > 1 ? biasOf(res, tn) : null, BS = I.ext('toleranceBurst');
       if (bias) {
         bias.cells = bias.speedPct > 0 ? Math.ceil(-Math.log(1 - Math.min(bias.speedPct, 99.9) / 100) / view.lnStep) : 0;
-        if (bias.cells > 0) view = Object.assign({}, view, { rectHits: erodeLow(view.rectHits, dims, bias.cells) });   // one grid for S, the box and bestSetpoint
+        if (bias.cells > 0 && BS) view = Object.assign({}, view, { rectHits: BS.erodeLow(view.rectHits, dims, bias.cells) });   // one grid for S, the box and bestSetpoint
         out.bias = bias;
       }
-      var S = TC.summedVolume(view.rectHits, dims), K = rates(view, tn, res.distIn, rpmC, sp.v), bx = boxAt(view, S, K, sp.cell, SMAX);
-      var al = alongOf(deps, tn, sp.theta, sp.v, yo), alongMargin = al ? al.margin : null, useAlong = alongMargin != null && alongMargin < bx.s;
+      var S = TC.summedVolume(view.rectHits, dims), K = rates(view, tn, res.distIn, rpmC, sp.v), bx0 = boxAt(view, S, K, sp.cell, SMAX), bx = bx0, vh = sp.v, bsp = null;
+      if (bias && bias.cells > 0 && BS) {   // burst-aware setpoint: first-shot speed = the best cell along the speed axis of the eroded grid; the headline refers to it
+        var pk = BS.pick(view, S, K, sp.cell, { top: sel.cellMaxB == null ? view.nB - 1 : sel.cellMaxB, B: bias.cells, sMax: SMAX, ok: function (b) { return rpmC * view.speeds[b] / sp.v < (mc.usableFreeRpm || Infinity); }, along: function (b) { return alongOf(deps, tn, sp.theta, view.speeds[b], yo); } });
+        bias.fits = !!pk;
+        if (pk) { bx = pk.bx; vh = view.speeds[pk.b]; bsp = { motorRpm: rpmC * vh / sp.v, exitSpeedMps: vh, v: vh, shiftPct: 100 * (vh / sp.v - 1), cells: pk.b - sp.cell[1], cell: [sp.cell[0], pk.b, sp.cell[2]], thetaDeg: sp.theta, yawDeg: sp.yaw }; }
+        out.burstSetpoint = bsp;
+      }
+      var al = alongOf(deps, tn, sp.theta, vh, yo), alongMargin = al ? al.margin : null, useAlong = alongMargin != null && alongMargin < bx.s;
       out.boxMargin = bx.s; out.alongMargin = alongMargin; out.margin = Math.min(bx.s, alongMargin == null ? Infinity : alongMargin, SMAX);
       out.capped = out.margin >= SMAX; out.resolution = bx.resolution; out.viewLimited = bx.viewLimited; out.along = al;
       out.perAxis = { yaw: bx.perAxis[2], angle: bx.perAxis[0], rpm: bx.perAxis[1] };
@@ -183,7 +182,7 @@
       // sideways position you can tolerate: the position share of the YAW axis margin alone (it rides on the aim window), so it does not move with the angle / rpm tolerances
       out.position = { lateralIn: tn.posIn > 0 ? res.distIn * Math.tan(Math.min(89, Math.min(bx.perAxis[2], SMAX) * Math.atan(tn.posIn / Math.max(res.distIn || 0, 1e-9)) / RAD) * RAD) : null, alongIn: al ? [-al.minusIn, al.plusIn] : null };
       out.setpoint = { thetaDeg: sp.theta, v: sp.v, motorRpm: rpmC, yawDeg: sp.yaw, yawOffsetDeg: yo, cell: sp.cell, moved: sp.moved };
-      if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx, rpmC);
+      if (tn.best && view.thStep < 1 && !unreachable) out.bestSetpoint = bestSetpoint(view, res, tn, deps, sel, S, K, sp, bx0, rpmC);
     }
     out.verdict = verdictOf(out.margin, out.bands);
     if (unreachable) { out.verdict = V[2]; out.cappedBy = 'unreachable'; out.margin = null; out.capped = false; out.limitingAxis = out.limitingSide = null; out.lowerBound = false; }   // boxMargin / alongMargin stay: they describe the uncapped aim

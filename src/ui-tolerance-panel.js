@@ -26,9 +26,9 @@
   }
   function bound(t, x) { return x >= (t.sMax || 4) - 1e-9 || !isFinite(x); }
 
-  // tolerance result (res.tolerance) -> { head, preview, limit, axes, position, notes[], best }; u = ShotUnits, opts = { downgrade }
+  // tolerance result (res.tolerance) -> { head, preview, limit, axes, position, notes[], best, burst }; u = ShotUnits, opts = { downgrade }
   function describe(t, u, opts) {
-    var out = { head: '', preview: false, limit: '', axes: '', position: '', notes: [], best: '' }, nf = u.nf;
+    var out = { head: '', preview: false, limit: '', axes: '', position: '', notes: [], best: '', burst: '' }, nf = u.nf;
     if (!t) return out;
     out.preview = t.mode === 'coarse';
     if (t.margin == null) {
@@ -53,6 +53,8 @@
     if (pos && pos.alongIn) bits.push('−' + u.fmtLen(-pos.alongIn[0], 1) + ' / +' + u.fmtLen(pos.alongIn[1], 1) + ' along the line');
     if (bits.length) out.position = 'Position you can tolerate: ' + bits.join(', ');
     if (t.cappedBy === 'headroom') out.notes.push('The motor is near its limit: it needs more than ' + Math.round(((opts && opts.downgrade) || 0.92) * 100) + ' % of its usable free speed, so it may not hold speed between shots.');
+    var bs = t.burstSetpoint;
+    if (bs && bs.shiftPct > 0 && t.setpoint) out.burst = 'Burst: first shot at ' + nf(bs.motorRpm, 0) + ' rpm (+' + nf(bs.shiftPct, 1) + ' %, +' + nf(bs.motorRpm - t.setpoint.motorRpm, 0) + ' rpm) so the later shots stay in the window.';
     var b = t.bestSetpoint;
     if (b && b.margin != null) {
       if (t.margin != null && b.margin <= t.margin + 1e-9) out.best = 'The current aim is already the most forgiving shot for your accuracy.';
@@ -123,7 +125,7 @@
         if (!t) return;
         var d = describe(t, deps.units, { downgrade: deps.downgrade });
         line(t.margin == null ? d.head : 'Margin ' + d.head + (d.preview ? ' (preview)' : ''), 'tol-margin');
-        line(d.limit); line(d.axes); line(d.position);
+        line(d.limit); line(d.axes); line(d.position); line(d.burst);
         d.notes.forEach(function (n) { line(n); });
         line(d.best, 'tol-best');
       }

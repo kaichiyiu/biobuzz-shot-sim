@@ -20,9 +20,14 @@
   }
   function stateOf(plan, s) { return s.inWindow ? 'in' : s.motorRpm < plan.windowRpm[0] ? 'below' : 'above'; }
 
-  // plan (E.burstPlan) -> { rows: [{ k, state, rpm, text, pos: 0..1 }], band: [lo, hi] in 0..1, windowText, minText, steadyText, note }; nf(x, digits) formats numbers
-  function describe(plan, nf, bias) {
-    var out = { rows: [], band: [0, 1], windowText: '', minText: '', steadyText: '', note: '' };
+  // the raised setpoint of the margin (res.tolerance.burstSetpoint) -> { pct, rpm } | null; only when the burst is included and the setpoint moved
+  function shiftOf(t, include) {
+    var b = t && include ? t.burstSetpoint : null;
+    return b && b.shiftPct > 0 && t.setpoint ? { pct: b.shiftPct, rpm: b.motorRpm - t.setpoint.motorRpm, setpointRpm: b.motorRpm } : null;
+  }
+  // plan (E.burstPlan) -> { rows: [{ k, state, rpm, text, pos: 0..1 }], band: [lo, hi] in 0..1, windowText, minText, steadyText, shiftText, note }; nf(x, digits) formats numbers
+  function describe(plan, nf, bias, shift) {
+    var out = { rows: [], band: [0, 1], windowText: '', minText: '', steadyText: '', shiftText: '', note: '' };
     if (!plan) { out.note = 'No burst to show: there is no reachable aim at this spot.'; return out; }
     var lo = plan.windowRpm[0], hi = plan.windowRpm[1], w = hi - lo, a = lo - w, b = hi + w, i;
     for (i = 0; i < plan.perShot.length; i++) { a = Math.min(a, plan.perShot[i].motorRpm - w / 10); b = Math.max(b, plan.perShot[i].motorRpm + w / 10); }
@@ -35,11 +40,12 @@
     });
     out.minText = plan.shots < 2 ? '' : plan.minIntervalS == null ? 'Min interval for all in window: none up to 60 s' : 'Min interval for all in window: ' + nf(plan.minIntervalS, plan.minIntervalS < 1 ? 3 : 2) + ' s';
     out.steadyText = plan.shots < 2 ? '' : 'After many shots at this interval the speed settles ' + nf(plan.steadyDeficitPct, 1) + ' % below the setpoint.';
+    if (shift) out.shiftText = 'Setpoint raised by +' + nf(shift.pct, 1) + ' % (+' + nf(shift.rpm, 0) + ' rpm) so the burst stays in the window.';
     if (bias && bias.speedPct > 0) out.note = 'The margin includes a speed bias of ' + nf(bias.speedPct, 1) + ' % (the largest loss over ' + bias.shots + ' shots).';
     return out;
   }
 
-  var api = { norm: norm, toParams: toParams, describe: describe, stateOf: stateOf, MAX: MAX, NOTE: NOTE, HELP: HELP };
+  var api = { norm: norm, toParams: toParams, describe: describe, shiftOf: shiftOf, stateOf: stateOf, MAX: MAX, NOTE: NOTE, HELP: HELP };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
 
   // ------------------------------------------------------------------ browser
@@ -64,11 +70,11 @@
     if (!els) return;
     els.seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-n')) === cur.shots)); });
     els.chk.checked = cur.include;
-    var plan = null, E = ctx && ctx.engine;
-    try { plan = last && E && E.burstPlan ? E.burstPlan(last, lastP, { shots: cur.shots }) : null; } catch (e) { plan = null; }
-    var d = describe(plan, nf, cur.include && last && last.tolerance ? last.tolerance.bias : null), kids = d.rows.map(function (r) { return bar(r, d.band); });
+    var plan = null, E = ctx && ctx.engine, sh = shiftOf(last && last.tolerance, cur.include);   // included and a raised setpoint: the plan uses it, so per-shot "in window" agrees with the margin
+    try { plan = last && E && E.burstPlan ? E.burstPlan(last, lastP, sh ? { shots: cur.shots, setpointRpm: sh.setpointRpm } : { shots: cur.shots }) : null; } catch (e) { plan = null; }
+    var d = describe(plan, nf, cur.include && last && last.tolerance ? last.tolerance.bias : null, sh), kids = d.rows.map(function (r) { return bar(r, d.band); });
     els.out.replaceChildren.apply(els.out, kids);
-    els.win.textContent = d.windowText; els.min.textContent = d.minText; els.steady.textContent = d.steadyText;
+    els.win.textContent = d.windowText; els.shift.textContent = d.shiftText; els.min.textContent = d.minText; els.steady.textContent = d.steadyText;
     els.note.textContent = d.note || (cur.include && last && last.tolerance ? '' : NOTE);
   }
 
@@ -76,11 +82,11 @@
     var seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Shots in the burst' }, [1, 2, 3, 4, 5].map(function (n) { return el('button', { type: 'button', 'data-n': String(n), text: String(n) }); }));
     var chk = el('input', { type: 'checkbox', id: 'burstInclude' });
     var win = el('p', { class: 'hood-hint', 'aria-live': 'polite' }), out = el('div', { class: 'burst-bars' }), min = el('p', { class: 'burst-min', style: 'font-weight:600;margin:2px 0' });
-    var steady = el('p', { class: 'hood-hint' }), note = el('p', { class: 'hood-hint', role: 'status' });
-    var wrap = el('div', { class: 'ctl burst', id: 'burst' }, [el('span', { class: 'label', text: 'Burst: motor speed shot by shot' }), seg, el('p', { class: 'hood-hint', text: HELP }), win, out, min, steady,
+    var steady = el('p', { class: 'hood-hint' }), shift = el('p', { class: 'burst-shift', style: 'font-weight:600;margin:2px 0' }), note = el('p', { class: 'hood-hint', role: 'status' });
+    var wrap = el('div', { class: 'ctl burst', id: 'burst' }, [el('span', { class: 'label', text: 'Burst: motor speed shot by shot' }), seg, el('p', { class: 'hood-hint', text: HELP }), win, shift, out, min, steady,
       el('label', { style: 'display:flex;gap:6px;align-items:center;font-size:13px' }, [chk, el('span', { text: 'Include burst in margin' })]), note]);
     host.replaceChildren(wrap);
-    els = { seg: seg, chk: chk, out: out, win: win, min: min, steady: steady, note: note };
+    els = { seg: seg, chk: chk, out: out, win: win, min: min, shift: shift, steady: steady, note: note };
     seg.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
