@@ -13,6 +13,7 @@
              control: 'pid' | 'power', tauS (bottom wheel), wFree (rad/s), dt (s) }
    rows(m, dt, fmt) -> [{ what, formula, numbers, result }] extra Show-the-math rows for a dual result m = E.motorModel(...), dt = m.details;
      fmt = { f(x, digits), pct(x, digits), sci(x), ms(x) } (the page's formatters).
+   recoveryRows(m, dt, fmt) -> rows for the recovery part (each wheel back to speed, exit-weighted leftover), same format.
    Engine hook: motorCore calls E._internal.ext('dualSplit').motor(...) for type 'dual' only; without this file the legacy formula runs. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'));
@@ -77,7 +78,22 @@
     return out;
   }
 
-  var impl = { motor: motor, rows: rows };
+  // recovery rows (after the time constant): each wheel back to speed (slower one decides), exit-weighted leftover at the next shot
+  function recoveryRows(m, dt, fmt) {
+    var f = fmt.f, pct = fmt.pct, ms = fmt.ms, k, pid, tauT, rB, rT, out = [];
+    if (!m || !dt || dt.type !== 'dual' || dt.splitModel !== 'impulse') return out;
+    k = dt.topRatio; pid = m.control === 'pid'; tauT = m.tauS * dt.inertiaTopKgM2 / dt.inertiaKgM2;
+    rB = recover(pid, dt.w0, dt.w1, m.dip, dt.wFree, m.tauS, dt.shotInterval);
+    rT = recover(pid, dt.w0Top, dt.w1Top, m.dipTop, dt.wFree, tauT, dt.shotInterval);
+    out.push({ what: pid ? 'Back to speed, each wheel (full power)' : 'Back within 1%, each wheel (no boost)',
+      formula: pid ? 't = τ × ln((ω_free − ω₁) ÷ (ω_free − ω₀)) per wheel; the slower wheel decides' : 't = τ × ln(dip ÷ 1%) per wheel; the slower wheel decides',
+      numbers: 'bottom ' + ms(1000 * rB.rec) + ', top ' + ms(1000 * rT.rec), result: ms(m.recoveryMs) });
+    out.push({ what: 'Still missing at the next shot (exit speed)', formula: 'leftover = (left_B + k × left_T) ÷ (1 + k), each wheel as for one wheel',
+      numbers: 'Δt = ' + f(dt.shotInterval, 2) + ' s: (' + pct(rB.res, 2) + ' + ' + f(k, 2) + ' × ' + pct(rT.res, 2) + ') ÷ (1 + ' + f(k, 2) + ')', result: pct(m.residual, 2) });
+    return out;
+  }
+
+  var impl = { motor: motor, rows: rows, recoveryRows: recoveryRows };
   var I = E && E._internal;
   if (I && typeof I.register === 'function') I.register('dualSplit', impl);
   return impl;

@@ -201,12 +201,20 @@ Speed consistency (fractions, combined in quadrature):
 - σ_motor(h): h ≤ 0.80 → 0.005; 0.80→0.95 linear 0.005→0.030; 0.95→1.00 linear 0.030→0.060.
 - Flywheel dip and recovery (wheel shaft driven by n = motorsPerWheel motors through G):
   - ω0 = n_w·2π/60, ω_wf = freeRpm·G·2π/60, T_ws = n·stallTorqueNm/G, τ = I·ω_wf/T_ws
-  - E = lossFactor(2.0)·(½mv² + ½I_ball·(S0·v/r)²)·share (share = 1 single; v_b/(v_b+v_t) dual)
+  - E = lossFactor(2.0)·(½mv² + ½I_ball·(S0·v/r)²)·share (share = 1 single; dual: the bottom wheel's impulse share s_B below)
   - ω1 = sqrt(max(0, ω0² − 2E/I)), dip d = 1 − ω1/ω0
   - recovery t_rec = τ·ln((ω_wf − ω1)/(ω_wf − ω0))  (∞ if ω0 ≥ ω_wf)
   - after Δt: ω(Δt) = ω_wf − (ω_wf − ω1)·e^(−Δt/τ); residual d_res = max(0, 1 − ω(Δt)/ω0)
   - σ_recovery = d_res/2
   - spin-up from rest: t_spin = τ·ln(ω_wf/(ω_wf − ω0))
+  - **dual wheel (impulse-momentum split, issue M2):** the ball gets a forward tangential impulse from each wheel,
+    J_B + J_T = m·v and r·(J_B − J_T) = I_ball·ω with ω = S0·v/r, so J_B − J_T = c·S0·m·v (c = I_ball/(m·r²), POLLEN 0.634).
+    Work drawn from a wheel = J·(its surface speed) with V_T = k·V_B, and the calibrated total E_tot = lossFactor·(…) is only split:
+    s_B = (1 + c·S0)/((1 + c·S0) + k·(1 − c·S0)), E_B = s_B·E_tot, E_T = (1 − s_B)·E_tot (c = 0 gives the old 1/(1 + k)).
+    Each wheel: ω1 = sqrt(max(0, ω0² − 2E/I)), top starts at k·ω0_bottom, I_top = I_bottom (one per-shaft inertia), same motor / gear / τ.
+    The next ball leaves at a speed ∝ V_B + V_T, so the exit-speed dip dip_x = (dip_B + k·dip_T)/(1 + k) and the leftover
+    d_res = (res_B + k·res_T)/(1 + k) (σ_recovery = d_res/2); bursts use dip_x. Recovery time = the slower wheel; spin-up = bottom wheel.
+    Headline dip and the motors table stay the bottom-wheel dip; the top-wheel and exit-speed dips are extra rows in Show the math.
 - σ_v = sqrt(σ_shooter² + σ_motor² + σ_recovery²). σ_v depends on the aim speed (through h).
 
 ---------------------------------------------------------------------------------------

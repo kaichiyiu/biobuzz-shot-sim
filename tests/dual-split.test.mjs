@@ -111,3 +111,17 @@ test('rows(): top wheel rows from a dual result, no verdict words; empty for a n
   assert.deepEqual(DS.rows({ ...m }, { ...details, type: 'single' }, fmt), []);
   assert.deepEqual(DS.rows({ ...m }, { ...details, splitModel: undefined }, fmt), []);
 });
+
+test('recoveryRows(): slower wheel and exit-weighted leftover equal motor() for both control types', () => {
+  const fmt = { f: (x, n) => x.toFixed(n), pct: (x, n) => (100 * x).toFixed(n) + '%', sci: (x) => x.toExponential(2), ms: (x) => (isFinite(x) ? x.toFixed(3) + ' ms' : 'never') };
+  for (const control of ['pid', 'power']) {
+    const i = inp(0.45, { control, dt: 0.5 }), d = DS.motor(i), k = 0.45;
+    const details = { type: 'dual', splitModel: 'impulse', topRatio: k, w0: d.w0B, w1: d.w1B, w0Top: d.w0T, w1Top: d.w1T, wFree: WFREE, shotInterval: 0.5, inertiaKgM2: IB, inertiaTopKgM2: IB };
+    const m = { control, tauS: TAU, dip: d.dipB, dipTop: d.dipT, recoveryMs: 1000 * d.recoveryS, residual: d.residual };
+    const rows = DS.recoveryRows(m, details, fmt);
+    assert.equal(rows.length, 2);
+    assert.ok(rows[0].result === fmt.ms(m.recoveryMs) && rows[1].result === fmt.pct(d.residual, 2), control);
+    assert.ok(rows.every((r) => !/NaN|undefined|verdict|POSSIBLE/.test(JSON.stringify(r))));
+  }
+  assert.deepEqual(DS.recoveryRows(null, null, fmt), []);
+});
