@@ -47,6 +47,10 @@ const UI = [
   // custom flywheel / motor (issue #5, L1-L5)
   'src/flywheel-custom.js', 'src/motor-custom.js', 'src/ui-flywheel.js',
   'tests/flywheel-custom.test.mjs', 'tests/motor-custom.test.mjs', 'tests/ui-flywheel.test.mjs', 'tests/worker-custom.test.mjs',
+  // Show the derivation (issue #6, O0-O9)
+  'src/derive-tex.js', 'src/derive-window.js', 'src/derive-hood.js', 'src/derive-margin.js', 'src/derive-burst.js', 'src/derive-flight.js', 'src/ui-derive.js', 'src/derive-latex.js',
+  'tests/derive-tex.test.mjs', 'tests/derive-window.test.mjs', 'tests/derive-hood.test.mjs', 'tests/derive-margin.test.mjs', 'tests/derive-burst.test.mjs', 'tests/derive-flight.test.mjs',
+  'tests/ui-derive.test.mjs', 'tests/derive-latex.test.mjs', 'tests/tolerance-grid.test.mjs',
 ];
 const lines = (f) => { const s = fs.readFileSync(path.join(ROOT, f), 'utf8'); return s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0); };
 const has = (f) => fs.existsSync(path.join(ROOT, f));
