@@ -213,7 +213,7 @@ Speed consistency (fractions, combined in quadrature):
     s_B = (1 + c·S0)/((1 + c·S0) + k·(1 − c·S0)), E_B = s_B·E_tot, E_T = (1 − s_B)·E_tot (c = 0 gives the old 1/(1 + k)).
     Each wheel: ω1 = sqrt(max(0, ω0² − 2E/I)), top starts at k·ω0_bottom, I_top = I_bottom (one per-shaft inertia), same motor / gear / τ.
     The next ball leaves at a speed ∝ V_B + V_T, so the exit-speed dip dip_x = (dip_B + k·dip_T)/(1 + k) and the leftover
-    d_res = (res_B + k·res_T)/(1 + k) (σ_recovery = d_res/2); bursts use dip_x. Recovery time = the slower wheel; spin-up = bottom wheel.
+    d_res = (res_B + k·res_T)/(1 + k) (σ_recovery = d_res/2); bursts use dip_x. The wheel energies are the lossFactor-calibrated λ·KE split by the impulse shares, not the raw J·V work (which would be about 8 % different); this keeps the dual model consistent with the single-wheel calibration. Recovery time = the slower wheel; spin-up = bottom wheel.
     Headline dip and the motors table stay the bottom-wheel dip; the top-wheel and exit-speed dips are extra rows in Show the math.
 - σ_v = sqrt(σ_shooter² + σ_motor² + σ_recovery²). σ_v depends on the aim speed (through h).
 

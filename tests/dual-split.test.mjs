@@ -107,6 +107,10 @@ test('rows(): top wheel rows from a dual result, no verdict words; empty for a n
     assert.ok(!/POSSIBLE|NOT CONSISTENT|WON'T WORK|verdict/i.test(JSON.stringify(r)));
     assert.ok(!/NaN|undefined/.test(JSON.stringify(r)), r.what);
   }
+  assert.equal(rows.some((r) => r.what === 'Note'), false);
+  const dd = DS.motor(inp(0.02, { v: 9 })), md = { ...m, dipTop: dd.dipT, dipExit: dd.dipExit };
+  assert.ok(dd.dipT > 0.5);
+  const nr = DS.rows(md, details, fmt).filter((r) => r.what === 'Note'); assert.equal(nr.length, 1); assert.match(nr[0].numbers, /nearly stops/); assert.doesNotMatch(JSON.stringify(nr), /NaN|undefined/);
   assert.deepEqual(DS.rows(null, null, fmt), []);
   assert.deepEqual(DS.rows({ ...m }, { ...details, type: 'single' }, fmt), []);
   assert.deepEqual(DS.rows({ ...m }, { ...details, splitModel: undefined }, fmt), []);

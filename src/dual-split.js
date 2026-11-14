@@ -75,6 +75,7 @@
     out.push({ what: 'Top wheel dip', formula: 'dip_T = 1 − ω_T1 ÷ ω_T0', numbers: '1 − ' + f(dt.w1Top, 1) + ' ÷ ' + f(dt.w0Top, 1), result: pct(m.dipTop, 2) });
     out.push({ what: 'Dip of the exit speed', formula: 'dip_x = (dip_B + k × dip_T) ÷ (1 + k)  (a ball leaves at a speed ∝ V_B + V_T; bursts and σ_recovery use this)',
       numbers: '(' + pct(m.dip, 2) + ' + ' + f(k, 2) + ' × ' + pct(m.dipTop, 2) + ') ÷ (1 + ' + f(k, 2) + ')', result: pct(m.dipExit, 2) });
+    if (m.dipTop > 0.5) out.push({ what: 'Note', formula: '', numbers: 'The top wheel loses more than half its speed (' + pct(m.dipTop, 1) + '): it nearly stops, so this model is outside its useful range. Use a larger top / bottom ratio k.', result: null });
     return out;
   }
 
