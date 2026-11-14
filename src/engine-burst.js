@@ -60,7 +60,9 @@
       else {
         var lo = 0, hi = MAX_INTERVAL_S;   // allIn is monotone in the interval (a longer wait never lowers any shot's speed)
         while (hi - lo > 1e-3) { var mid = (lo + hi) / 2; if (allIn(mid)) hi = mid; else lo = mid; }
-        minI = Math.ceil(hi * 1000) / 1000;   // whole ms, rounded up so the interval itself passes
+        var ms = Math.ceil(hi * 1000);   // whole ms, rounded up so the interval itself passes; then step down to the smallest passing ms (bisection stops within 1 ms)
+        while (ms > 0 && allIn((ms - 1) / 1000)) ms--;
+        minI = ms / 1000;
       }
     }
     return { shots: shots, intervalS: dt, control: m.control, steadyDeficitPct: 100 * (1 - steady[399]), perShot: per, allIn: firstOut === null,

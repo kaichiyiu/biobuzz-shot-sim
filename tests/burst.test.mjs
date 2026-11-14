@@ -49,7 +49,7 @@ test('minIntervalS: smallest whole ms keeping all shots in the window; non-decre
     assert.ok(b.minIntervalS >= prev, `shots ${n}`); prev = b.minIntervalS;
     if (n >= 2) {
       assert.ok(E.burstPlan(r, params, { shots: n, intervalS: b.minIntervalS }).allIn, `min interval passes (${n})`);
-      assert.ok(!E.burstPlan(r, params, { shots: n, intervalS: b.minIntervalS - 0.002 }).allIn, `2 ms less fails (${n})`);
+      assert.ok(!E.burstPlan(r, params, { shots: n, intervalS: b.minIntervalS - 0.001 }).allIn, `1 ms less fails (${n})`);
     }
   }
   assert.equal(E.burstPlan(r, params, { shots: 1 }).minIntervalS, 0);
